@@ -36,7 +36,9 @@ class DisasterState(TypedDict, total=False):
     _clarification_loop_count: int
     commander_token: Optional[Any]
     signed_approval: Optional[Any]
-    dispatch_error: Optional[str]
+    dispatch_error: Optional[str] = None
+    public_advisory: Optional[Dict[str, Any]] = None
+    hospital_reachability: Optional[List[Dict[str, Any]]]
 
 
 class StateSnapshot(BaseModel):
@@ -58,3 +60,5 @@ class StateSnapshot(BaseModel):
     step_budget: int = 20
     status: str = "INITIALIZED"
     dispatch_error: Optional[str] = None
+    public_advisory: Optional[Dict[str, Any]] = None
+    hospital_reachability: Optional[List[Dict[str, Any]]] = None

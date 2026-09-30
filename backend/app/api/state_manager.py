@@ -369,6 +369,7 @@ class CrisisStateManager:
         nonce: Optional[str] = None,
         timestamp: Optional[float] = None,
         commander_token: Optional[CommanderToken] = None,
+        decisions: Optional[Dict[str, bool]] = None,
         auto_sign: bool = False,
     ) -> Dict[str, Any]:
         """Cryptographically authorize plan and resume LangGraph workflow to dispatch."""
@@ -376,13 +377,14 @@ class CrisisStateManager:
         if not curr_plan or curr_plan.get("plan_id") != plan_id:
             return {"error": f"Target plan '{plan_id}' does not match current proposed plan."}
 
-        plan_hash = self.approval_gate.compute_plan_hash(curr_plan)
+        plan_hash = self.approval_gate.compute_plan_hash(curr_plan, decisions=decisions)
 
         if auto_sign:
             signed = self.approval_gate.sign_approval(
                 plan_id=plan_id,
                 plan_hash=plan_hash,
                 signing_key=self.key_manager.signing_key,
+                decisions=decisions,
             )
             token = commander_token or CommanderToken(
                 user_id="commander_certified_01",
@@ -399,6 +401,7 @@ class CrisisStateManager:
                 timestamp=timestamp,
                 nonce=nonce,
                 signature_hex=signature_hex,
+                decisions=decisions,
             )
 
         # Update LangGraph checkpoint state

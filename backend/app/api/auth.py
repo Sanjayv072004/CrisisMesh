@@ -12,7 +12,7 @@ from backend.app.security.crypto import CommanderKeyManager
 
 JWT_SECRET = os.getenv("CRISISMESH_JWT_SECRET", "crisismesh-dev-jwt-secret-key-32bytes-long!")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_SECONDS = 86400  # 24 hours
+JWT_EXPIRATION_SECONDS = 7200  # 2 hours
 
 
 def is_demo_mode() -> bool:

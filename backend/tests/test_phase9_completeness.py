@@ -171,3 +171,26 @@ def test_full_pipeline_includes_comm_agent():
     assert "public_advisory" in final_state
     adv = final_state["public_advisory"]
     assert "Flood" in adv["title"] or "1 Incidents Reported" in adv["title"]
+
+
+def test_partial_approval_and_tampered_decisions():
+    km = CommanderKeyManager()
+    gate = ApprovalGate()
+    plan_dict = {"assignments": [{"unit_id": "u1", "incident_id": "i1"}], "cost_breakdown": {}}
+
+    # 1. Commander confirms u1
+    decisions = {"u1": True}
+    plan_hash = gate.compute_plan_hash(plan_dict, decisions=decisions)
+    signed = gate.sign_approval("p1", plan_hash, km.signing_key, decisions=decisions)
+
+    valid, _ = gate.verify_before_dispatch(signed, plan_hash, km.get_public_key_hex())
+    assert valid is True
+
+    # 2. Adversary tampers with decisions list (e.g. altering hash or decision)
+    tampered_decisions = {"u1": False}
+    tampered_hash = gate.compute_plan_hash(plan_dict, decisions=tampered_decisions)
+
+    # Verifying signed against tampered plan hash must FAIL
+    valid_tampered, reason = gate.verify_before_dispatch(signed, tampered_hash, km.get_public_key_hex())
+    assert valid_tampered is False
+    assert "Plan hash mismatch" in reason

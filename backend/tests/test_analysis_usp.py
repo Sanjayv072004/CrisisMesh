@@ -1,4 +1,4 @@
-﻿"""Phase 7 USP Proof & Analysis Tests: Mathematical Invariants, Low-Churn & Worst-Case Bounds."""
+"""Phase 7 USP Proof & Analysis Tests: Mathematical Invariants, Low-Churn & Worst-Case Bounds."""
 from __future__ import annotations
 import pytest
 from starlette.testclient import TestClient
@@ -49,3 +49,22 @@ def test_usp_proof_endpoint_and_mathematical_bounds(client):
     assert cf["runner_up_eta_minutes"] >= cf["assigned_eta_minutes"]
     assert cf["delta_cost"] >= 0.0
     assert len(cf["rationale"]) > 10
+
+    # 5. Assert low_churn itemized costs sum exactly to total_cost
+    low_sum = round(
+        lc["low_churn_delay_cost"]
+        + lc["low_churn_wasted_cost"]
+        + lc["low_churn_switching_cost"]
+        + lc["low_churn_unserved_cost"],
+        2,
+    )
+    assert abs(lc["low_churn_total_cost"] - low_sum) < 0.05, f"Total cost {lc['low_churn_total_cost']} != sum {low_sum}"
+
+    naive_sum = round(
+        lc["naive_delay_cost"]
+        + lc["naive_wasted_cost"]
+        + lc["naive_switching_cost"]
+        + lc["naive_unserved_cost"],
+        2,
+    )
+    assert abs(lc["naive_total_cost"] - naive_sum) < 0.05, f"Naive total cost {lc['naive_total_cost']} != sum {naive_sum}"

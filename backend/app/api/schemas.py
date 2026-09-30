@@ -22,7 +22,7 @@ class TokenResponse(BaseModel):
     role: str
     user_id: str
     public_key_hex: Optional[str] = None
-    expires_in_seconds: int = 86400
+    expires_in_seconds: int = 7200
 
 
 # -------------------------------------------------------------------------
@@ -76,6 +76,7 @@ class PlanApproveRequest(BaseModel):
     signature_hex: Optional[str] = None
     nonce: Optional[str] = None
     timestamp: Optional[float] = None
+    decisions: Optional[Dict[str, bool]] = None
     auto_sign: bool = False  # Allows certified commander key from vault to auto-sign in dev mode
 
 
@@ -142,6 +143,10 @@ class LowChurnProofComparison(BaseModel):
     low_churn_delay_cost: float
     naive_switching_cost: float
     low_churn_switching_cost: float
+    naive_wasted_cost: float = 0.0
+    low_churn_wasted_cost: float = 0.0
+    naive_unserved_cost: float = 0.0
+    low_churn_unserved_cost: float = 0.0
     explanation: str
 
 

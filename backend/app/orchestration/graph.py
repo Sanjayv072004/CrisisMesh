@@ -188,7 +188,6 @@ class CrisisMeshOrchestrator:
 
         # 2. Cryptographic signature and plan hash verification
         curr_plan_data = state.get("current_plan", {})
-        plan_hash = self.approval_gate.compute_plan_hash(curr_plan_data)
         approval_data = state.get("signed_approval")
 
         if not approval_data:
@@ -212,6 +211,8 @@ class CrisisMeshOrchestrator:
             approval = SignedApproval(**approval_data)
         else:
             approval = approval_data
+
+        plan_hash = self.approval_gate.compute_plan_hash(curr_plan_data, decisions=approval.decisions)
 
         valid, reason = self.approval_gate.verify_before_dispatch(
             approval=approval,

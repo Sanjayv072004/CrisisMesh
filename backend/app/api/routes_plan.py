@@ -66,6 +66,7 @@ def approve_plan(
         nonce=req.nonce,
         timestamp=req.timestamp,
         commander_token=user,
+        decisions=req.decisions,
         auto_sign=req.auto_sign,
     )
 

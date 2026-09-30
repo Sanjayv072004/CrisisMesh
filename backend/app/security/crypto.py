@@ -21,6 +21,7 @@ class SignedApproval(BaseModel):
     timestamp: float
     nonce: str
     signature_hex: str
+    decisions: Optional[Dict[str, bool]] = None
 
 
 class CommanderKeyManager:
@@ -63,8 +64,8 @@ class ApprovalGate:
         self._consumed_nonces: Set[str] = set()
 
     @staticmethod
-    def compute_plan_hash(plan_dict_or_obj: Any) -> str:
-        """Compute deterministic SHA-256 canonical hash of a Plan."""
+    def compute_plan_hash(plan_dict_or_obj: Any, decisions: Optional[Dict[str, bool]] = None) -> str:
+        """Compute deterministic SHA-256 canonical hash of a Plan and its approval decisions."""
         if hasattr(plan_dict_or_obj, "model_dump"):
             d = plan_dict_or_obj.model_dump()
         elif isinstance(plan_dict_or_obj, dict):
@@ -72,17 +73,18 @@ class ApprovalGate:
         else:
             d = {"data": str(plan_dict_or_obj)}
 
-        # Strip variable timestamps / statuses to bind structure
+        # Strip variable timestamps / statuses to bind structure and decision list
         normalized = {
             "assignments": d.get("assignments", []),
             "unserved_incidents": d.get("unserved_incidents", []),
             "cost_breakdown": d.get("cost_breakdown", {}),
+            "decisions": sorted(decisions.items()) if decisions else [],
         }
         canonical_json = json.dumps(normalized, sort_keys=True)
         return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
     def sign_approval(
-        self, plan_id: str, plan_hash: str, signing_key: nacl.signing.SigningKey
+        self, plan_id: str, plan_hash: str, signing_key: nacl.signing.SigningKey, decisions: Optional[Dict[str, bool]] = None
     ) -> SignedApproval:
         """Sign a plan approval binding plan_id, plan_hash, current timestamp, and a random nonce."""
         ts = time.time()
@@ -98,7 +100,8 @@ class ApprovalGate:
             commander_public_key_hex=pub_hex,
             timestamp=ts,
             nonce=nonce,
-            signature_hex=sig_hex
+            signature_hex=sig_hex,
+            decisions=decisions
         )
 
     def verify_before_dispatch(

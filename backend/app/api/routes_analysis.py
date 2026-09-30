@@ -82,6 +82,10 @@ def get_usp_proof():
         low_churn_delay_cost=round(plan_low_churn.cost_breakdown.delay_harm_cost, 2),
         naive_switching_cost=round(plan_naive.cost_breakdown.switching_penalty_cost, 2),
         low_churn_switching_cost=round(plan_low_churn.cost_breakdown.switching_penalty_cost, 2),
+        naive_wasted_cost=round(plan_naive.cost_breakdown.wasted_dispatch_cost, 2),
+        low_churn_wasted_cost=round(plan_low_churn.cost_breakdown.wasted_dispatch_cost, 2),
+        naive_unserved_cost=round(plan_naive.cost_breakdown.unserved_penalty_cost, 2),
+        low_churn_unserved_cost=round(plan_low_churn.cost_breakdown.unserved_penalty_cost, 2),
         explanation=(
             f"Under naive optimization (lambda=0), {diff_naive.units_redirected} active unit(s) were aggressively "
             f"redirected mid-transit (switching cost 0.0), abandoning victims. CrisisMesh low-churn optimization "
