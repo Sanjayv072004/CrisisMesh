@@ -1,4 +1,4 @@
-﻿"""LangGraph Multi-Agent Orchestration Workflow with StateGraph and Checkpointing."""
+"""LangGraph Multi-Agent Orchestration Workflow with StateGraph and Checkpointing."""
 from __future__ import annotations
 from typing import Dict, Any, Optional
 from langgraph.graph import StateGraph, START, END
@@ -12,14 +12,23 @@ from backend.app.agents.resource import ResourceAgent
 from backend.app.agents.guardian import GuardianAgent
 from backend.app.agents.command import CommandAgent
 from backend.app.orchestration.state import DisasterState
+from backend.app.security.crypto import ApprovalGate, SignedApproval
+from backend.app.security.rbac import RBACManager, CommanderToken
+from backend.app.models.schemas import SecurityEvent
 
 
 class CrisisMeshOrchestrator:
     """Multi-Agent Orchestrator managing StateGraph execution, negotiation loops, and human approval."""
 
-    def __init__(self, bus: Optional[MessageBus] = None, checkpointer: Optional[Any] = None):
+    def __init__(
+        self,
+        bus: Optional[MessageBus] = None,
+        checkpointer: Optional[Any] = None,
+        approval_gate: Optional[ApprovalGate] = None,
+    ):
         self.bus = bus or MessageBus()
         self.checkpointer = checkpointer or MemorySaver()
+        self.approval_gate = approval_gate or ApprovalGate()
 
         # Instantiate the 7 agents sharing the common MessageBus
         self.supervisor = SupervisorAgent(bus=self.bus)
@@ -64,18 +73,13 @@ class CrisisMeshOrchestrator:
         builder.add_conditional_edges(
             "supervisor",
             supervisor_router,
-            {
-                "situation": "situation",
-                "impact": "impact",
-                "resource": "resource",
-                "guardian": "guardian"
-            }
+            {"situation": "situation", "resource": "resource", "impact": "impact", "guardian": "guardian"}
         )
 
         # 4. Situation -> Verification
         builder.add_edge("situation", "verification")
 
-        # 5. Verification -> Clarification check
+        # 5. Verification -> Clarification loop back to Situation or proceed to Impact
         def verification_router(state: DisasterState) -> str:
             msg_log = self.bus.get_trace()
             last_msg = msg_log[-1] if msg_log else None
@@ -145,12 +149,85 @@ class CrisisMeshOrchestrator:
 
     def _dispatch_step(self, state: DisasterState) -> DisasterState:
         """Final execution step: dispatches units upon valid authorization."""
+        # 1. Enforce RBAC
+        token = state.get("commander_token")
+        rbac_ok, rbac_msg = RBACManager.enforce_commander_token(token)
+        if not rbac_ok:
+            sec_event = SecurityEvent(
+                event_type="unauthorized_dispatch",
+                severity="CRITICAL",
+                agent_name="ApprovalGate",
+                description=rbac_msg,
+            )
+            self.bus.log_security_event(
+                event_type=sec_event.event_type,
+                actor="ApprovalGate",
+                payload=sec_event.model_dump(),
+            )
+            state["status"] = "DISPATCH_BLOCKED"
+            state["dispatch_error"] = rbac_msg
+            return state
+
+        # 2. Cryptographic signature and plan hash verification
+        curr_plan_data = state.get("current_plan", {})
+        plan_hash = self.approval_gate.compute_plan_hash(curr_plan_data)
+        approval_data = state.get("signed_approval")
+
+        if not approval_data:
+            err = "Dispatch blocked: Missing cryptographically signed commander approval."
+            sec_event = SecurityEvent(
+                event_type="missing_approval_signature",
+                severity="CRITICAL",
+                agent_name="ApprovalGate",
+                description=err,
+            )
+            self.bus.log_security_event(
+                event_type=sec_event.event_type,
+                actor="ApprovalGate",
+                payload=sec_event.model_dump(),
+            )
+            state["status"] = "DISPATCH_BLOCKED"
+            state["dispatch_error"] = err
+            return state
+
+        if isinstance(approval_data, dict):
+            approval = SignedApproval(**approval_data)
+        else:
+            approval = approval_data
+
+        valid, reason = self.approval_gate.verify_before_dispatch(
+            approval=approval,
+            expected_plan_hash=plan_hash,
+            expected_commander_pubkey_hex=token.public_key_hex,
+        )
+
+        if not valid:
+            sec_event = SecurityEvent(
+                event_type="invalid_approval_signature",
+                severity="CRITICAL",
+                agent_name="ApprovalGate",
+                description=reason,
+            )
+            self.bus.log_security_event(
+                event_type=sec_event.event_type,
+                actor="ApprovalGate",
+                payload=sec_event.model_dump(),
+            )
+            state["status"] = "DISPATCH_BLOCKED"
+            state["dispatch_error"] = reason
+            return state
+
+        # Successfully authorized
         state["status"] = "DISPATCHED"
         self.bus.publish(
             self.supervisor.send_message(
                 receiver="Fleet",
                 message_type="FleetDispatched",
-                payload={"plan_id": state.get("current_plan", {}).get("plan_id", "unknown")}
+                payload={
+                    "plan_id": curr_plan_data.get("plan_id", "unknown"),
+                    "authorized_by": token.user_id,
+                    "approval_nonce": approval.nonce,
+                }
             )
         )
         return state

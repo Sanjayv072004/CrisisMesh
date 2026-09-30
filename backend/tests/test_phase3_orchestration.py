@@ -1,4 +1,4 @@
-﻿"""Comprehensive Integration Tests for Phase 3: The 7 Agents & LangGraph Orchestration."""
+"""Comprehensive Integration Tests for Phase 3: The 7 Agents & LangGraph Orchestration."""
 import json
 from pathlib import Path
 import pytest
@@ -8,6 +8,8 @@ from backend.app.models.schemas import (
     Unit, IncidentRecord, Plan, Assignment, PlanCost, SecurityEvent
 )
 from backend.app.security.manifest import PermissionViolation
+from backend.app.security.crypto import CommanderKeyManager, ApprovalGate
+from backend.app.security.rbac import CommanderToken
 
 DATA_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "scenario.json"
 
@@ -199,6 +201,17 @@ def test_run_can_resume_from_checkpoint():
     state_paused = orchestrator.graph.invoke(initial_state, config=config)
     assert state_paused["status"] == "INITIALIZED"  # Has not yet dispatched!
     assert "current_plan" in state_paused
+
+    # Human Commander signs approval to authorize dispatch
+    key_mgr = CommanderKeyManager()
+    plan_hash = ApprovalGate.compute_plan_hash(state_paused["current_plan"])
+    signed = orchestrator.approval_gate.sign_approval(
+        plan_id=state_paused["current_plan"]["plan_id"],
+        plan_hash=plan_hash,
+        signing_key=key_mgr.signing_key,
+    )
+    token = CommanderToken(user_id="cmd_test", public_key_hex=key_mgr.get_public_key_hex())
+    orchestrator.graph.update_state(config, {"commander_token": token, "signed_approval": signed})
 
     # Run 2: Resume from checkpoint
     state_resumed = orchestrator.graph.invoke(None, config=config)

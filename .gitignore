@@ -1,4 +1,4 @@
-﻿# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
@@ -47,6 +47,7 @@ yarn-error.log*
 # Secrets, keys, and tokens
 *.pem
 *.key
+.keys/
 *.token
 *.pat
 credentials.json

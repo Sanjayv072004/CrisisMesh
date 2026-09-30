@@ -1,4 +1,4 @@
-﻿"""Shared LangGraph Typed State Model for Crisis Coordination."""
+"""Shared LangGraph Typed State Model for Crisis Coordination."""
 from __future__ import annotations
 from typing import Dict, List, Optional, Any, TypedDict
 from pydantic import BaseModel, Field
@@ -28,6 +28,9 @@ class DisasterState(TypedDict, total=False):
     status: str
     error: Optional[str]
     _clarification_loop_count: int
+    commander_token: Optional[Any]
+    signed_approval: Optional[Any]
+    dispatch_error: Optional[str]
 
 
 class StateSnapshot(BaseModel):
@@ -48,3 +51,4 @@ class StateSnapshot(BaseModel):
     veto_count: int = 0
     step_budget: int = 20
     status: str = "INITIALIZED"
+    dispatch_error: Optional[str] = None

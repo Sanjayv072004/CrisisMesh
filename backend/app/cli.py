@@ -1,4 +1,4 @@
-﻿"""CrisisMesh CLI: Scenario Runner and Demonstration Tool."""
+"""CrisisMesh CLI: Scenario Runner and Demonstration Tool."""
 from __future__ import annotations
 import json
 import sys
@@ -6,6 +6,8 @@ from pathlib import Path
 from backend.app.agents.base.bus import MessageBus
 from backend.app.orchestration.graph import CrisisMeshOrchestrator
 from backend.app.models.schemas import Unit, IncidentRecord, Hospital, Plan, PlanDiff
+from backend.app.security.crypto import CommanderKeyManager, ApprovalGate
+from backend.app.security.rbac import CommanderToken
 
 DATA_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "scenario.json"
 
@@ -65,9 +67,27 @@ def run_scenario(auto_approve: bool = True):
 
     # 4. Human Approval Gate
     if auto_approve:
-        print("\n>>> HUMAN COMMANDER APPROVAL: SIGNED (Auto-Approve for test/demo mode)")
-        state["previous_approved_plan"] = state.get("current_plan")
-        state["status"] = "APPROVED"
+        print("\n>>> HUMAN COMMANDER APPROVAL: SIGNING DISPATCH AUTHORIZATION (Ed25519 Digital Signature)")
+        key_mgr = CommanderKeyManager()
+        plan_hash = ApprovalGate.compute_plan_hash(state["current_plan"])
+        signed_approval = orchestrator.approval_gate.sign_approval(
+            plan_id=state["current_plan"]["plan_id"],
+            plan_hash=plan_hash,
+            signing_key=key_mgr.signing_key
+        )
+        commander_token = CommanderToken(
+            user_id="commander_bengaluru_01",
+            public_key_hex=key_mgr.get_public_key_hex()
+        )
+        orchestrator.graph.update_state(config, {
+            "commander_token": commander_token,
+            "signed_approval": signed_approval,
+            "previous_approved_plan": state.get("current_plan"),
+            "status": "APPROVED",
+        })
+        print(f"    * Commander Key Hex: {commander_token.public_key_hex[:16]}...")
+        print(f"    * Bound Plan Hash:   {plan_hash[:16]}...")
+        print(f"    * Digital Signature: {signed_approval.signature_hex[:16]}... (VALID)")
         # Resume graph from checkpointer past interrupt node
         state = orchestrator.graph.invoke(None, config=config)
         print(f"[FINAL T0 DISPATCH STATUS]: {state.get('status')}")
