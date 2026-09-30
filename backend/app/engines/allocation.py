@@ -191,8 +191,19 @@ class AllocationEngine:
                     tot_wasted += wasted_costs[pair]
                     tot_switch += switch_costs[pair]
 
-                    # UNCERTAINTY-AWARE: Unverified incidents get PROVISIONAL assignments
-                    is_prov = (getattr(inc, "verification_label", None) == VerificationLabel.UNVERIFIED) or (getattr(inc, "credibility_score", getattr(inc, "credibility", 0.5)) < 0.75)
+                    # UNCERTAINTY-AWARE: Unverified incidents receive PROVISIONAL assignments
+                    is_unverified = (
+                        getattr(inc, "verification_label", None) in (VerificationLabel.UNVERIFIED, "UNVERIFIED", "unverified")
+                        or getattr(inc, "is_verified", None) is False
+                    )
+                    is_confirmed = (
+                        getattr(inc, "verification_label", None) in (VerificationLabel.CONFIRMED, "CONFIRMED", "confirmed")
+                        or getattr(inc, "is_verified", None) is True
+                    )
+                    if is_confirmed and getattr(inc, "credibility_score", getattr(inc, "credibility", 0.5)) >= 0.45:
+                        is_prov = False
+                    else:
+                        is_prov = is_unverified or (getattr(inc, "credibility_score", getattr(inc, "credibility", 0.5)) < 0.75)
 
                     assignments.append(Assignment(
                         unit_id=u_id,

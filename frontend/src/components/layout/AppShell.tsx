@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useCrisisStore } from "@/store/useCrisisStore";
 import { api } from "@/lib/api";
 import { wsClient } from "@/lib/websocket";
@@ -10,8 +10,11 @@ import { SafeModeBanner } from "../demo/SafeModeBanner";
 import { AttackPanel } from "../demo/AttackPanel";
 import { USPProofPanel } from "../demo/USPProofPanel";
 import { BengaluruTacticalMap } from "../map/BengaluruTacticalMap";
-import { AgentFlowView } from "../demo/AgentFlowView";
+import { AgentMeshStrip } from "../demo/AgentMeshStrip";
 import { SecurityFeed } from "../security/SecurityFeed";
+import { GuidedNarrator } from "../demo/GuidedNarrator";
+import { HeroIntroModal } from "../demo/HeroIntroModal";
+import { DemoSummaryModal } from "../demo/DemoSummaryModal";
 import {
   AlertTriangle,
   Ambulance,
@@ -28,6 +31,9 @@ import {
   Flame,
   ShieldAlert,
   Play,
+  HelpCircle,
+  X,
+  Sliders,
 } from "lucide-react";
 
 export function AppShell() {
@@ -43,6 +49,8 @@ export function AppShell() {
     clearPendingApproval,
     setSnapshot,
     setAuditStatus,
+    toggleUSPPanel,
+    toggleAttackPanel,
   } = useCrisisStore();
 
   const [leftTab, setLeftTab] = useState<"incidents" | "security">("incidents");
@@ -50,8 +58,14 @@ export function AppShell() {
   const [isApproving, setIsApproving] = useState(false);
   const [provisionalDecisions, setProvisionalDecisions] = useState<Record<string, boolean>>({});
 
+  // Guided Demo Mode & Modals
+  const [showHero, setShowHero] = useState<boolean>(true);
+  const [showSummary, setShowSummary] = useState<boolean>(false);
+  const [guidedStep, setGuidedStep] = useState<number>(1);
+  const [showLegend, setShowLegend] = useState<boolean>(false);
+
   // Auto-authenticate as Commander on load, connect WebSocket, and fetch state
-  React.useEffect(() => {
+  useEffect(() => {
     let isMounted = true;
     const initSession = async () => {
       try {
@@ -75,6 +89,25 @@ export function AppShell() {
       isMounted = false;
     };
   }, [setSnapshot, setAuditStatus]);
+
+  // Advance Guided Demo automatically based on real backend lifecycle events
+  useEffect(() => {
+    if (status === "RUNNING_T0" || (Object.keys(incidents).length >= 3 && guidedStep === 1)) {
+      setGuidedStep(2);
+    }
+    if (currentPlan && currentPlan.assignments?.length > 0 && guidedStep === 2) {
+      setGuidedStep(3);
+    }
+    if (status === "AWAITING_COMMANDER_APPROVAL" && guidedStep === 3) {
+      setGuidedStep(4);
+    }
+    if (status === "DISPATCHED" && guidedStep === 4) {
+      setGuidedStep(5);
+    }
+    if (incidents["inc_t10_critical_underpass"] && guidedStep === 5) {
+      setGuidedStep(6);
+    }
+  }, [status, incidents, currentPlan, guidedStep]);
 
   // Filter out adversarial/quarantined reports from incident queue
   const incidentList = useMemo(() => {
@@ -107,11 +140,37 @@ export function AppShell() {
         setSnapshot(snap);
         const audit = await api.verifyAudit();
         setAuditStatus(audit);
+        if (guidedStep === 4) {
+          setGuidedStep(5);
+        }
       }
     } catch (e) {
       console.error("Approval failed:", e);
     } finally {
       setIsApproving(false);
+    }
+  };
+
+  const handleGuidedAction = async (step: number) => {
+    try {
+      if (step === 1) {
+        const snap = await api.startScenario();
+        setSnapshot(snap);
+        setGuidedStep(2);
+      } else if (step === 4) {
+        await handleApprove();
+      } else if (step === 5) {
+        const snap = await api.stepScenario();
+        setSnapshot(snap);
+        setGuidedStep(6);
+      } else if (step === 7) {
+        toggleUSPPanel();
+      } else if (step === 8) {
+        setLeftTab("security");
+        setShowSummary(true);
+      }
+    } catch (e) {
+      console.error("Guided action error:", e);
     }
   };
 
@@ -121,15 +180,22 @@ export function AppShell() {
       <TopBar />
       <SafeModeBanner />
 
-      {/* 2. Top Banner: Multi-Agent State Flow Graph */}
+      {/* 2. Top Slim Agent Mesh Strip */}
       <div className="px-3 pt-2 shrink-0">
-        <AgentFlowView />
+        <AgentMeshStrip />
       </div>
 
-      {/* 3. Main 1080p Tactical Control Room Grid */}
-      <main className="flex-1 grid grid-cols-12 gap-2 p-3 min-h-0">
+      {/* 3. Main Tactical 1080p Grid */}
+      <main className="flex-1 grid grid-cols-12 gap-2 p-3 min-h-0 pb-20">
         {/* Left Column (3 cols): Incidents Queue & Fleet Units / Security Feed */}
-        <section aria-label="Operations Sidebar" className="col-span-3 flex flex-col gap-2 min-h-0">
+        <section
+          aria-label="Operations Sidebar"
+          className={`col-span-3 flex flex-col gap-2 min-h-0 transition-all ${
+            guidedStep === 1 || guidedStep === 2
+              ? "ring-2 ring-cyan-500 rounded-lg shadow-[0_0_20px_rgba(6,182,212,0.3)]"
+              : ""
+          }`}
+        >
           {/* Top Half: Incidents Queue / Security Feed Tabs */}
           <div className="flex-1 bg-ops-surface border border-ops-border rounded-lg flex flex-col min-h-0 overflow-hidden shadow-xl">
             {/* Header Tabs */}
@@ -158,7 +224,13 @@ export function AppShell() {
                   <span>Security Feed</span>
                 </button>
               </div>
-              <span className="text-[10px] font-mono text-ops-muted uppercase">Verified</span>
+              <button
+                onClick={() => setShowLegend(!showLegend)}
+                className="text-slate-400 hover:text-cyan-400 p-1 rounded"
+                title="What am I looking at?"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+              </button>
             </div>
 
             {leftTab === "security" ? (
@@ -170,61 +242,67 @@ export function AppShell() {
                     <Activity className="w-8 h-8 text-slate-700 mb-2 animate-pulse" />
                     <p className="text-xs font-semibold text-slate-300">No active incidents reported.</p>
                     <p className="text-[11px] text-slate-500 mt-1">
-                      Click &apos;Start T0&apos; in header to ingest flood reports.
+                      Click &apos;Start T0&apos; in narrator bar to ingest flood calls.
                     </p>
                   </div>
                 ) : (
-                  incidentList.map((inc) => (
-                    <div
-                      key={inc.id}
-                      className="p-2.5 rounded-lg bg-ops-bg border border-ops-border hover:border-ops-cyan/50 transition-all cursor-pointer shadow-sm"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="font-semibold text-xs text-white truncate min-w-0 flex-1">
-                          {inc.title}
-                        </div>
-                        <span
-                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold shrink-0 whitespace-nowrap leading-none ${
-                            inc.severity >= 4
-                              ? "bg-red-950 text-ops-red border border-red-800"
-                              : "bg-amber-950 text-ops-amber border border-amber-800"
-                          }`}
-                        >
-                          SEV {inc.severity}
-                        </span>
-                      </div>
+                  incidentList.map((inc) => {
+                    const isConfirmed = inc.verification_label === "CONFIRMED";
+                    const isConflicting = inc.verification_label === "CONFLICTING";
+                    const trustLabel = isConfirmed ? "Trust: CONFIRMED" : isConflicting ? "Trust: CONFLICTING" : "Trust: UNVERIFIED";
 
-                      <div className="flex items-center justify-between text-[11px] text-ops-muted mt-2">
-                        <span className="font-mono text-[10px]">ID: {inc.id}</span>
-                        <span
-                          className={`px-1.5 py-0.2 rounded text-[9px] uppercase font-bold shrink-0 whitespace-nowrap leading-none font-mono ${
-                            inc.verification_label === "CONFIRMED"
-                              ? "text-ops-emerald bg-emerald-950/60 border border-emerald-800/60"
-                              : inc.verification_label === "CONFLICTING"
-                              ? "text-ops-red bg-red-950/60 border border-red-800/60"
-                              : "text-ops-amber bg-amber-950/60 border border-amber-800/60"
-                          }`}
-                        >
-                          {inc.verification_label}
-                        </span>
+                    return (
+                      <div
+                        key={inc.id}
+                        className="p-2.5 rounded-lg bg-ops-bg border border-ops-border hover:border-ops-cyan/50 transition-all cursor-pointer shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="font-semibold text-xs text-white truncate min-w-0 flex-1">
+                            {inc.title}
+                          </div>
+                          <span
+                            className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold shrink-0 whitespace-nowrap leading-none ${
+                              inc.severity >= 4
+                                ? "bg-red-950 text-ops-red border border-red-800"
+                                : "bg-amber-950 text-ops-amber border border-amber-800"
+                            }`}
+                          >
+                            SEV {inc.severity}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] text-ops-muted mt-2">
+                          <span className="font-mono text-[10px]">ID: {inc.id}</span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 whitespace-nowrap leading-none ${
+                              isConfirmed
+                                ? "text-emerald-300 bg-emerald-950/80 border border-emerald-700"
+                                : isConflicting
+                                ? "text-red-300 bg-red-950/80 border border-red-700"
+                                : "text-amber-300 bg-amber-950/80 border border-amber-700"
+                            }`}
+                          >
+                            {trustLabel}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}
           </div>
 
-          {/* Bottom Half: Fleet Units Section */}
-          <div className="h-52 bg-ops-surface border border-ops-border rounded-lg flex flex-col min-h-0 overflow-hidden shadow-xl shrink-0">
+          {/* Bottom Half: Fleet Readiness Section */}
+          <div className="h-44 bg-ops-surface border border-ops-border rounded-lg flex flex-col min-h-0 overflow-hidden shadow-xl shrink-0">
             <div className="h-8 border-b border-ops-border px-3 flex items-center justify-between bg-ops-surfaceHover/50 select-none">
               <div className="flex items-center gap-2">
                 <Ambulance className="w-3.5 h-3.5 text-ops-cyan" />
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
-                  Fleet Units ({units.length})
+                  Fleet Readiness ({units.length})
                 </span>
               </div>
-              <span className="text-[10px] font-mono text-ops-muted">Readiness</span>
+              <span className="text-[10px] font-mono text-ops-muted">Available</span>
             </div>
 
             <div className="flex-1 overflow-y-auto p-1.5 space-y-1">
@@ -264,12 +342,45 @@ export function AppShell() {
         </section>
 
         {/* Center Column (5 cols): Dominant Tactical Map Canvas */}
-        <section aria-label="Bengaluru Tactical Map" className="col-span-5 flex flex-col min-h-0 shadow-2xl rounded-lg overflow-hidden border border-ops-border">
+        <section
+          aria-label="Bengaluru Tactical Map"
+          className={`col-span-5 flex flex-col min-h-0 shadow-2xl rounded-lg overflow-hidden border border-ops-border relative transition-all ${
+            guidedStep === 5 || guidedStep === 6
+              ? "ring-2 ring-cyan-500 shadow-[0_0_25px_rgba(6,182,212,0.35)]"
+              : ""
+          }`}
+        >
           <BengaluruTacticalMap />
+
+          {/* "What Am I Looking At?" Legend Overlay */}
+          {showLegend && (
+            <div className="absolute top-11 right-3 w-72 bg-slate-950/95 border border-cyan-500/40 rounded-xl p-3.5 shadow-2xl backdrop-blur-xl z-30 font-mono text-xs select-none">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+                <span className="font-bold text-cyan-300">Tactical Command Guide</span>
+                <button onClick={() => setShowLegend(false)} className="text-slate-400 hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="space-y-2 text-[11px] text-slate-300">
+                <p><span className="text-cyan-400 font-bold">1. Road Network:</span> 9 primary arterial sectors across South-East Bengaluru.</p>
+                <p><span className="text-red-400 font-bold">2. Red Segments:</span> Flooded / blocked roads detected by sensors.</p>
+                <p><span className="text-amber-400 font-bold">3. Amber Beacons:</span> Unverified reports awaiting confirmation.</p>
+                <p><span className="text-emerald-400 font-bold">4. Emerald Beacons:</span> Multi-witness corroborated incidents.</p>
+                <p><span className="text-cyan-400 font-bold">5. Dashed Lines:</span> Real-time optimal dispatch routes from CP-SAT solver.</p>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Right Column (4 cols): Active Dispatch Plan & Multi-Agent Trace */}
-        <section aria-label="Plan and Trace Panels" className="col-span-4 flex flex-col gap-2 min-h-0">
+        <section
+          aria-label="Plan and Trace Panels"
+          className={`col-span-4 flex flex-col gap-2 min-h-0 transition-all ${
+            guidedStep === 3 || guidedStep === 4
+              ? "ring-2 ring-cyan-500 rounded-lg shadow-[0_0_20px_rgba(6,182,212,0.3)]"
+              : ""
+          }`}
+        >
           {/* Top Half: Plan & Cost Breakdown with Provisional Approval Checkboxes */}
           <div className="h-64 bg-ops-surface border border-ops-border rounded-lg flex flex-col min-h-0 overflow-hidden shadow-xl">
             <div className="h-9 border-b border-ops-border px-3 flex items-center justify-between bg-ops-surfaceHover/50 select-none">
@@ -311,7 +422,7 @@ export function AppShell() {
                     </div>
                   </div>
 
-                  {/* Active Assignments List with Provisional Confirmation Checkboxes */}
+                  {/* Active Assignments List */}
                   <div className="space-y-1.5">
                     <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                       Assignments ({currentPlan.assignments?.length || 0}):
@@ -336,7 +447,7 @@ export function AppShell() {
                                 checked={provisionalDecisions[a.unit_id] ?? true}
                                 onChange={() => handleDecisionToggle(a.unit_id)}
                                 className="w-3.5 h-3.5 rounded border-amber-600 text-amber-500 focus:ring-amber-500 cursor-pointer"
-                                title="Explicit Commander Confirmation Required"
+                                title="Explicit Commander Confirmation"
                               />
                             )}
                             <span className="text-ops-cyan font-bold font-mono">{a.unit_id}</span>
@@ -417,7 +528,7 @@ export function AppShell() {
                       <span className="text-slate-400 truncate text-[10px]">[{msg.type}]</span>
                     </div>
                     <span className="text-[9px] text-slate-500 shrink-0">
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour12: false })}
+                      {new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour12: false })}
                     </span>
                   </div>
                 ))
@@ -427,7 +538,36 @@ export function AppShell() {
         </section>
       </main>
 
-      {/* 4. Drawers & Floating Presentation Bar */}
+      {/* 4. Guided Demo Bottom Narrator */}
+      <GuidedNarrator
+        currentStep={guidedStep}
+        onStepChange={setGuidedStep}
+        onActionClick={handleGuidedAction}
+      />
+
+      {/* 5. Drawers & Modals */}
+      {showHero && (
+        <HeroIntroModal
+          onStartDemo={() => {
+            setShowHero(false);
+            handleGuidedAction(1);
+          }}
+          onExploreFreely={() => setShowHero(false)}
+        />
+      )}
+
+      {showSummary && (
+        <DemoSummaryModal
+          onRestart={() => {
+            setShowSummary(false);
+            setShowHero(true);
+            setGuidedStep(1);
+            api.resetScenario().then(setSnapshot);
+          }}
+          onClose={() => setShowSummary(false)}
+        />
+      )}
+
       <AttackPanel />
       <USPProofPanel />
       <PresenterControls />

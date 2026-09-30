@@ -31,26 +31,26 @@ def test_playwright_full_ui_gate():
         body_bg = page.evaluate("() => window.getComputedStyle(document.body).backgroundColor")
         assert body_bg in ["rgb(10, 13, 20)", "rgb(7, 10, 18)", "#0a0d14", "#070a12"], f"CSS not loaded, body_bg was {body_bg}"
 
-        # 3. Assert WebSocket is CONNECTED in the header badge
+        # 3. Dismiss Hero Modal if present
+        hero_btn = page.get_by_role("button", name="Run Guided Demo")
+        if hero_btn.is_visible():
+            hero_btn.click()
+            time.sleep(3)
+        else:
+            explore_btn = page.get_by_role("button", name="Explore Manually")
+            if explore_btn.is_visible():
+                explore_btn.click()
+                time.sleep(1)
+
+        # 4. Assert WebSocket is CONNECTED in the header badge
         header_text = page.locator("header").text_content() or ""
         assert "CONNECTED" in header_text, f"WebSocket was not CONNECTED. Header: {header_text}"
 
-        # 4. Assert Map has drawn features (nodes & road edges)
+        # 5. Assert Map has drawn features (nodes & road edges)
         line_count = page.locator("svg line").count()
         circle_count = page.locator("svg circle").count()
         assert line_count > 0, f"Map has 0 road lines drawn: {line_count}"
         assert circle_count > 0, f"Map has 0 nodes/circles drawn: {circle_count}"
-
-        # 5. Reset and trigger Start T0
-        reset_btn = page.get_by_role("button", name="Reset", exact=True)
-        if reset_btn.is_visible():
-            reset_btn.click()
-            time.sleep(2)
-
-        start_btn = page.get_by_role("button", name="Start T0", exact=True)
-        assert start_btn.is_visible(), "Start T0 button not found"
-        start_btn.click()
-        time.sleep(4)
 
         # 6. Assert Incidents are populated (> 0)
         incident_cards = page.locator("section[aria-label='Operations Sidebar']").locator("div[class*='cursor-pointer']").count()

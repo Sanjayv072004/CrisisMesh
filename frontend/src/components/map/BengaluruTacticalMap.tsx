@@ -232,6 +232,15 @@ export function BengaluruTacticalMap() {
           {/* 3. Arterial Junction Nodes */}
           {graphData?.nodes.map((node) => {
             const [nx, ny] = project(node.lat, node.lon);
+            const shortName = node.id
+              .replace("_junction", "")
+              .replace("_lake", "")
+              .replace("_bridge", "")
+              .replace("_flyover", "")
+              .replace("_road", "")
+              .replace("_100ft", "")
+              .replace("_", " ");
+
             return (
               <g
                 key={`node-${node.id}`}
@@ -239,16 +248,28 @@ export function BengaluruTacticalMap() {
                 onMouseEnter={() => setHoveredItem({ type: "Junction", id: node.id, name: node.name })}
                 onMouseLeave={() => setHoveredItem(null)}
               >
-                <circle cx={nx} cy={ny} r="1.0" fill="#0f172a" stroke="#0284c7" strokeWidth="0.4" />
+                <circle cx={nx} cy={ny} r="1.1" fill="#0b1329" stroke="#00E5FF" strokeWidth="0.5" />
+                <rect
+                  x={nx - (shortName.length * 0.9)}
+                  y={ny + 1.8}
+                  width={shortName.length * 1.8}
+                  height="2.4"
+                  rx="0.6"
+                  fill="#060913"
+                  fillOpacity="0.85"
+                  stroke="#1e293b"
+                  strokeWidth="0.2"
+                />
                 <text
                   x={nx}
-                  y={ny + 2.5}
-                  fontSize="1.6"
+                  y={ny + 3.4}
+                  fontSize="1.5"
                   textAnchor="middle"
                   fill="#94a3b8"
-                  className="font-mono pointer-events-none select-none"
+                  fontWeight="600"
+                  className="font-mono pointer-events-none select-none uppercase tracking-wider"
                 >
-                  {node.name.split(" ")[0]}
+                  {shortName}
                 </text>
               </g>
             );
