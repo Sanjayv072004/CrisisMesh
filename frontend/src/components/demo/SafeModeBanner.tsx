@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import { useCrisisStore } from "@/store/useCrisisStore";
@@ -32,7 +32,7 @@ export function SafeModeBanner() {
           <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
         </span>
         <span className="font-bold tracking-wider text-cyan-300">[SAFE MODE ACTIVE]</span>
-        <span className="text-cyan-400/80">Deterministic Fallback: Mock LLM • Cached OSM Road Graph • Offline Vector Grid • &lt; 4m Guarantee</span>
+        <span className="text-cyan-400/80">Deterministic Fallback: Mock LLM • Bengaluru Tactical Graph (9 nodes, 12 corridors) • Offline Vector Grid • &lt; 4m Guarantee</span>
       </div>
       <div className="flex items-center gap-3">
         <span className="text-[11px] text-cyan-400/60 hidden sm:inline">Hotkey: [P]resenter</span>

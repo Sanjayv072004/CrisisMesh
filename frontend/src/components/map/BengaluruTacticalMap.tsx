@@ -43,6 +43,35 @@ interface GraphData {
   blocked_count: number;
 }
 
+const DEFAULT_GRAPH: GraphData = {
+  nodes: [
+    { id: "koramangala_junction", name: "Koramangala 80ft Junction", lat: 12.9352, lon: 77.6245 },
+    { id: "silk_board", name: "Central Silk Board Junction", lat: 12.9172, lon: 77.6228 },
+    { id: "hsr_layout", name: "HSR Layout 27th Main", lat: 12.9116, lon: 77.6433 },
+    { id: "bellandur_lake", name: "Bellandur Outer Ring Road", lat: 12.9304, lon: 77.6784 },
+    { id: "marathahalli_bridge", name: "Marathahalli Bridge", lat: 12.9569, lon: 77.7011 },
+    { id: "whitefield_junction", name: "Whitefield Hope Farm", lat: 12.9698, lon: 77.7499 },
+    { id: "domlur_flyover", name: "Domlur Flyover", lat: 12.9609, lon: 77.6387 },
+    { id: "sarjapur_road", name: "Sarjapur Fire Hub", lat: 12.9237, lon: 77.6534 },
+    { id: "indiranagar_100ft", name: "Indiranagar 100ft Road", lat: 12.9719, lon: 77.6412 },
+  ],
+  edges: [
+    { u: "koramangala_junction", v: "silk_board", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 4.5, coordinates: [[77.6245, 12.9352], [77.6228, 12.9172]] },
+    { u: "silk_board", v: "hsr_layout", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 3.2, coordinates: [[77.6228, 12.9172], [77.6433, 12.9116]] },
+    { u: "hsr_layout", v: "bellandur_lake", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 5.1, coordinates: [[77.6433, 12.9116], [77.6784, 12.9304]] },
+    { u: "bellandur_lake", v: "marathahalli_bridge", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 6.0, coordinates: [[77.6784, 12.9304], [77.7011, 12.9569]] },
+    { u: "marathahalli_bridge", v: "whitefield_junction", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 8.5, coordinates: [[77.7011, 12.9569], [77.7499, 12.9698]] },
+    { u: "koramangala_junction", v: "domlur_flyover", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 5.0, coordinates: [[77.6245, 12.9352], [77.6387, 12.9609]] },
+    { u: "domlur_flyover", v: "indiranagar_100ft", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 3.0, coordinates: [[77.6387, 12.9609], [77.6412, 12.9719]] },
+    { u: "hsr_layout", v: "sarjapur_road", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 3.5, coordinates: [[77.6433, 12.9116], [77.6534, 12.9237]] },
+    { u: "sarjapur_road", v: "bellandur_lake", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 4.0, coordinates: [[77.6534, 12.9237], [77.6784, 12.9304]] },
+    { u: "domlur_flyover", v: "marathahalli_bridge", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 7.2, coordinates: [[77.6387, 12.9609], [77.7011, 12.9569]] },
+    { u: "koramangala_junction", v: "sarjapur_road", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 4.8, coordinates: [[77.6245, 12.9352], [77.6534, 12.9237]] },
+    { u: "indiranagar_100ft", v: "marathahalli_bridge", is_blocked: false, flood_depth_m: 0.0, travel_time_mins: 6.8, coordinates: [[77.6412, 12.9719], [77.7011, 12.9569]] },
+  ],
+  blocked_count: 0,
+};
+
 export function BengaluruTacticalMap() {
   const {
     incidents,
@@ -57,7 +86,7 @@ export function BengaluruTacticalMap() {
     status,
   } = useCrisisStore();
 
-  const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const [graphData, setGraphData] = useState<GraphData>(DEFAULT_GRAPH);
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [hoveredItem, setHoveredItem] = useState<{ type: string; id: string; name: string } | null>(null);
 
@@ -65,31 +94,30 @@ export function BengaluruTacticalMap() {
   useEffect(() => {
     const fetchGraph = async () => {
       try {
-        const res = await fetch("http://127.0.0.1:8000/map/graph");
-        if (res.ok) {
-          const data = await res.json();
-          setGraphData(data);
+        const data = await api.getRoadGraph();
+        if (data && data.nodes && data.nodes.length > 0) {
+          setGraphData(data as any);
         }
       } catch (e) {
-        console.warn("Could not fetch road graph, using fallback layout:", e);
+        // Fallback already pre-set
       }
     };
     fetchGraph();
-    const interval = setInterval(fetchGraph, 3000);
+    const interval = setInterval(fetchGraph, 2000);
     return () => clearInterval(interval);
   }, []);
 
   // Map coordinate bounds for Bengaluru South-East corridor
-  // Lat: 12.905 to 12.970 | Lon: 77.610 to 77.710
+  // Lat: 12.900 to 12.980 | Lon: 77.610 to 77.760
   const minLat = 12.900;
-  const maxLat = 12.975;
+  const maxLat = 12.980;
   const minLon = 77.610;
-  const maxLon = 77.715;
+  const maxLon = 77.760;
 
   const project = (lat: number, lon: number): [number, number] => {
-    const x = ((lon - minLon) / (maxLon - minLon)) * 100;
+    const x = ((lon - minLon) / (maxLon - minLon)) * 92 + 4;
     // Invert Y because latitude goes south-to-north while SVG goes top-to-bottom
-    const y = (1 - (lat - minLat) / (maxLat - minLat)) * 100;
+    const y = (1 - (lat - minLat) / (maxLat - minLat)) * 88 + 6;
     return [Math.max(4, Math.min(96, x)), Math.max(4, Math.min(96, y))];
   };
 
@@ -106,26 +134,17 @@ export function BengaluruTacticalMap() {
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-ops-emerald animate-pulse" />
           <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-            Bengaluru South-East Flood Corridor
+            Bengaluru South-East Corridor
           </span>
           <span className="text-[10px] text-slate-400 font-mono">
-            [12.91°N, 77.63°E]
+            [12.91°N - 12.98°N, 77.61°E - 77.76°E]
           </span>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-cyan-300">
-            {isOfflineMap ? "MODE: OFFLINE VECTOR GEOJSON" : "MODE: MAPLIBRE GL DARK"}
+            TACTICAL VECTOR GRAPH (9 NODES, 12 CORRIDORS)
           </div>
-
-          <button
-            onClick={toggleOfflineMap}
-            className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-ops-surfaceHover hover:bg-slate-700 text-slate-300 border border-ops-border transition-colors"
-            title="Toggle Map Engine Mode"
-          >
-            <Layers className="w-3 h-3 text-ops-cyan" />
-            <span>Switch</span>
-          </button>
         </div>
       </div>
 

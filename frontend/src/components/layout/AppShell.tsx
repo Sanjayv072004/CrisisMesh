@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { useCrisisStore } from "@/store/useCrisisStore";
 import { api } from "@/lib/api";
+import { wsClient } from "@/lib/websocket";
 import { TopBar } from "./TopBar";
 import { PresenterControls } from "../demo/PresenterControls";
 import { SafeModeBanner } from "../demo/SafeModeBanner";
@@ -48,6 +49,32 @@ export function AppShell() {
   const [rightTab, setRightTab] = useState<"plan" | "trace">("plan");
   const [isApproving, setIsApproving] = useState(false);
   const [provisionalDecisions, setProvisionalDecisions] = useState<Record<string, boolean>>({});
+
+  // Auto-authenticate as Commander on load, connect WebSocket, and fetch state
+  React.useEffect(() => {
+    let isMounted = true;
+    const initSession = async () => {
+      try {
+        const auth = await api.demoLogin("commander");
+        if (!isMounted) return;
+        wsClient.connect(auth.access_token);
+        const snap = await api.getStateSnapshot();
+        if (isMounted && snap) {
+          setSnapshot(snap);
+        }
+        const audit = await api.verifyAudit();
+        if (isMounted && audit) {
+          setAuditStatus(audit);
+        }
+      } catch (e) {
+        console.warn("Initial session hydration:", e);
+      }
+    };
+    initSession();
+    return () => {
+      isMounted = false;
+    };
+  }, [setSnapshot, setAuditStatus]);
 
   // Filter out adversarial/quarantined reports from incident queue
   const incidentList = useMemo(() => {
