@@ -19,6 +19,8 @@ from backend.app.api.routes_attacks import router as attacks_router
 from backend.app.api.routes_ws import router as ws_router
 from backend.app.api.routes_analysis import router as analysis_router
 from backend.app.security.secrets import secrets_config
+from pathlib import Path
+from backend.app.audit.chain import AuditChain
 
 START_TIME = time.time()
 MAX_REQUEST_BYTES = 1024 * 1024  # 1 MB maximum request payload size
@@ -179,6 +181,13 @@ def create_app() -> FastAPI:
             print("\n" + "\n".join(banner) + "\n", flush=True)
         else:
             print("[CrisisMesh Security] Production mode: CRISISMESH_DEMO_MODE is FALSE. Demo accounts are disabled.", flush=True)
+
+        app.state.audit_chain.append("SYSTEM_STARTUP", "SYSTEM", {"mode": secrets_config.mode, "demo": is_demo_mode()})
+
+
+    # Set up persistent AuditChain
+    AUDIT_LOG_DIR = Path(__file__).resolve().parent.parent.parent.parent / 'data' / 'audit'
+    app.state.audit_chain = AuditChain(log_path=AUDIT_LOG_DIR / 'audit.jsonl')
 
     return app
 

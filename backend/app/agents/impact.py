@@ -16,7 +16,7 @@ class ImpactAgent(BaseAgent):
 
     def __init__(self, bus: MessageBus, impact_engine: Optional[ImpactEngine] = None):
         manifest = PermissionManifest(
-            allowed_tools={"compute_travel_time", "travel_time_matrix", "generate_impact_report", "review_route"},
+            allowed_tools={"compute_travel_time", "travel_time_matrix", "generate_impact_report", "review_route", "hospital_reachability"},
             allowed_inbound={"IncidentVerified", "RoadBlockedAlert", "PlanProposed"},
             allowed_outbound={"ImpactAssessed", "PlanVeto"}
         )
@@ -26,6 +26,7 @@ class ImpactAgent(BaseAgent):
             "travel_time_matrix": self.engine.travel_time_matrix,
             "generate_impact_report": self.engine.generate_impact_report,
             "review_route": self.engine.review_route,
+            "hospital_reachability": self.engine.hard_to_reach,
         }
         super().__init__(name="Impact", role="Road Graph & Cascading Impact Assessor", manifest=manifest, bus=bus, tools=tools)
 
@@ -78,10 +79,18 @@ class ImpactAgent(BaseAgent):
         incidents = [IncidentRecord(**i) if isinstance(i, dict) else i for i in incidents_raw]
         hospitals = [Hospital(**h) if isinstance(h, dict) else h for h in hospitals_raw]
 
+
         report = self.call_tool("generate_impact_report", units=units, incidents=incidents, hospitals=hospitals)
         state["impact_report"] = report.model_dump()
 
+        if hospitals:
+            hosp_analysis = self.call_tool("hospital_reachability", hospitals=hospitals, incidents=incidents, threshold_mins=35.0)
+            state["hospital_reachability"] = hosp_analysis
+        else:
+            hosp_analysis = []
+
         # If a plan proposal is pending review, review it
+
         curr_plan_data = state.get("current_plan")
         if curr_plan_data and curr_plan_data.get("status") == "PROPOSED":
             plan = Plan(**curr_plan_data)
@@ -95,7 +104,7 @@ class ImpactAgent(BaseAgent):
         self.send_message(
             receiver="Resource",
             message_type="ImpactAssessed",
-            payload={"flooded_roads": report.flooded_roads, "isolated_incidents": report.isolated_incidents},
+            payload={"flooded_roads": report.flooded_roads, "isolated_incidents": report.isolated_incidents, "hospital_reachability": hosp_analysis},
             trace_id="trace-impact"
         )
         state["active_agents"] = list(set(state.get("active_agents", [])) | {self.name})

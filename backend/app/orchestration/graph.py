@@ -11,6 +11,7 @@ from backend.app.agents.impact import ImpactAgent
 from backend.app.agents.resource import ResourceAgent
 from backend.app.agents.guardian import GuardianAgent
 from backend.app.agents.command import CommandAgent
+from backend.app.agents.comm import CommAgent
 from backend.app.orchestration.state import DisasterState
 from backend.app.security.crypto import ApprovalGate, SignedApproval
 from backend.app.security.rbac import RBACManager, CommanderToken
@@ -52,6 +53,7 @@ class CrisisMeshOrchestrator:
         self.resource = ResourceAgent(bus=self.bus, impact_engine=self.impact.engine)
         self.guardian = GuardianAgent(bus=self.bus)
         self.command = CommandAgent(bus=self.bus)
+        self.comm = CommAgent(bus=self.bus, llm_adapter=self.llm_adapter)
 
         self.graph = self._build_graph()
 
@@ -67,6 +69,7 @@ class CrisisMeshOrchestrator:
         builder.add_node("impact_review", self._impact_review_step)
         builder.add_node("guardian", self.guardian.run)
         builder.add_node("command", self.command.run)
+        builder.add_node("comm", self.comm.run)
         builder.add_node("human_approval", self._human_approval_step)
         builder.add_node("dispatch", self._dispatch_step)
 
@@ -98,7 +101,7 @@ class CrisisMeshOrchestrator:
             msg_log = self.bus.get_trace()
             reqs = [m for m in msg_log if m.type == "ClarificationRequest"]
             resps = [m for m in msg_log if m.type == "ClarificationResponse"]
-            if len(reqs) > len(resps) and state.get("_clarification_loop_count", 0) < 1:
+            if len(reqs) > len(resps) and state.get("_clarification_loop_count", 0) < 3:
                 state["_clarification_loop_count"] = state.get("_clarification_loop_count", 0) + 1
                 return "situation"
             return "impact"
@@ -142,7 +145,8 @@ class CrisisMeshOrchestrator:
         )
 
         # 10. Command -> Human Approval Interrupt -> Dispatch -> END
-        builder.add_edge("command", "human_approval")
+        builder.add_edge("command", "comm")
+        builder.add_edge("comm", "human_approval")
         builder.add_edge("human_approval", "dispatch")
         builder.add_edge("dispatch", END)
 

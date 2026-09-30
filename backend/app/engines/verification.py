@@ -158,6 +158,26 @@ def cluster_duplicates(
     return clusters
 
 
+
+def bayesian_credibility_update(
+    prior: float,
+    likelihood_ratio: float,
+) -> float:
+    """Bayesian posterior update: P(true|evidence) using Bayes' theorem."""
+    if prior <= 0.0:
+        return 0.0
+    if prior >= 1.0:
+        return 1.0
+
+    # P(H|E) = [P(E|H)*P(H)] / [P(E|H)*P(H) + P(E|~H)*(1-P(H))]
+    # Equivalent to: posterior_odds = prior_odds * LR
+    # posterior = posterior_odds / (1 + posterior_odds)
+
+    prior_odds = prior / (1.0 - prior)
+    posterior_odds = prior_odds * likelihood_ratio
+    return posterior_odds / (1.0 + posterior_odds)
+
+
 def credibility_score(
     report_cluster: ReportCluster,
     sensors: List[SensorReading],
@@ -258,13 +278,17 @@ def credibility_score(
             nearby_sensors.append(s)
 
     if nearby_sensors:
-        sensor_confirmed = any(s.value >= s.flood_threshold for s in nearby_sensors)
+        sensor_confirmed = any(s.value >= getattr(s, "flood_threshold", 0.5) for s in nearby_sensors)
         sensor_denied = any(s.value < 0.1 for s in nearby_sensors)
 
         if sensor_confirmed:
-            score = score + (1.0 - score) * 0.60
+            lr = 4.0   # Strong evidence supporting the report
         elif sensor_denied and not sensor_confirmed:
-            score = max(0.05, score * 0.40)
+            lr = 0.15  # Contradicting evidence
+        else:
+            lr = 1.0   # Neutral
+
+        score = bayesian_credibility_update(score, lr)
 
     # 4. Time Decay Term
     elapsed_seconds = max(0.0, (now - latest_timestamp).total_seconds())
