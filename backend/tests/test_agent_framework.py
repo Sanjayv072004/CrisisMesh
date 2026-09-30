@@ -137,3 +137,39 @@ def test_llm_output_failing_schema_validation_is_rejected():
 
     # Verified that it retried once before rejecting
     assert call_count == 2, f"Expected 2 attempts (initial + 1 retry), got {call_count}"
+def test_replay_reproduces_a_recorded_run(tmp_path):
+    """Test 4: Replay mode reproduces a recorded run from stored data or file."""
+    adapter = LLMAdapter(mode=LLMMode.REPLAY)
+    trace_id = "replay-trace-999"
+    recorded_json = (
+        '{"incident_type": "flood", "severity": 5, '
+        '"location_name": "Outer Ring Road Underpass", "is_life_threatening": true}'
+    )
+    
+    # Register in memory
+    adapter.register_replay(trace_id, recorded_json)
+    output = adapter.generate(
+        agent_name="Situation",
+        prompt="Arbitrary prompt in replay mode",
+        schema=SampleExtractionSchema,
+        trace_id=trace_id
+    )
+    assert output.severity == 5
+    assert output.location_name == "Outer Ring Road Underpass"
+    assert output.is_life_threatening is True
+
+    # Test loading from file
+    replay_file = tmp_path / "replay_data.json"
+    import json
+    with open(replay_file, "w", encoding="utf-8") as f:
+        json.dump({"file-trace-1": recorded_json}, f)
+
+    adapter_file = LLMAdapter(mode=LLMMode.REPLAY)
+    adapter_file.load_replay_file(replay_file)
+    output_file = adapter_file.generate(
+        agent_name="Situation",
+        prompt="Prompt",
+        schema=SampleExtractionSchema,
+        trace_id="file-trace-1"
+    )
+    assert output_file.location_name == "Outer Ring Road Underpass"

@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 from enum import Enum
+from pathlib import Path
 from typing import Type, TypeVar, Dict, Any, Optional, Callable
 from pydantic import BaseModel, ValidationError
 
@@ -24,13 +25,16 @@ class LLMAdapter:
         self,
         mode: LLMMode = LLMMode.MOCK,
         live_provider_fn: Optional[Callable[[str, str], str]] = None,
+        timeout_seconds: float = 10.0,
     ):
         self.mode = mode
         self.live_provider_fn = live_provider_fn
+        self.timeout_seconds = timeout_seconds
         # Map: (agent_name, prompt_hash) -> JSON string or Dict
         self._canned_responses: Dict[Tuple[str, str], Any] = {}
         # Map: (agent_name, semantic_key) -> JSON string or Dict
         self._named_canned_responses: Dict[Tuple[str, str], Any] = {}
+        # Map: trace_id -> raw JSON string
         self._replay_store: Dict[str, str] = {}
 
     def register_canned_response(
@@ -45,6 +49,15 @@ class LLMAdapter:
     def register_replay(self, trace_id: str, raw_response: str) -> None:
         """Register a recorded response for REPLAY mode."""
         self._replay_store[trace_id] = raw_response
+
+    def load_replay_file(self, file_path: Path | str) -> None:
+        """Load recorded replay responses from a JSON file."""
+        p = Path(file_path)
+        if p.exists():
+            with open(p, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    self._replay_store.update(data)
 
     def generate(
         self,
@@ -67,20 +80,20 @@ class LLMAdapter:
         """Deterministic offline mock generation."""
         prompt_hash = hashlib.sha256(prompt.strip().encode("utf-8")).hexdigest()[:16]
 
-        # Check registered exact match or hash match
+        # 1. Exact hash match
         if (agent_name, prompt_hash) in self._canned_responses:
             data = self._canned_responses[(agent_name, prompt_hash)]
             return self._validate_and_return(data, schema)
 
+        # 2. Named substring match
         for (c_agent, c_key), data in self._named_canned_responses.items():
             if c_agent == agent_name and (c_key in prompt or prompt in c_key):
                 return self._validate_and_return(data, schema)
 
-        # Fallback: Synthesize deterministic schema-valid default instance
+        # 3. Fallback: Synthesize deterministic schema-valid default instance
         try:
             return schema.model_validate({})
         except ValidationError:
-            # Construct minimal valid fields based on schema annotations
             seed = int(prompt_hash, 16)
             fallback_dict = self._synthesize_minimal_fields(schema, seed)
             return schema.model_validate(fallback_dict)
@@ -110,7 +123,7 @@ class LLMAdapter:
     def _generate_replay(self, trace_id: str, schema: Type[T]) -> T:
         """Retrieve and validate recorded replay output."""
         if trace_id not in self._replay_store:
-            raise KeyError(f"No replay trace found for trace_id: {trace_id}")
+            raise KeyError(f"No replay trace found for trace_id: '{trace_id}'")
         raw = self._replay_store[trace_id]
         return self._validate_and_return(raw, schema)
 
@@ -119,7 +132,6 @@ class LLMAdapter:
         if not self.live_provider_fn:
             raise RuntimeError("Live provider function not configured for LIVE mode")
 
-        # Instruction prepended to enforce JSON schema
         json_schema = json.dumps(schema.model_json_schema())
         enforced_prompt = f"{prompt}\n\nIMPORTANT: Respond with pure JSON conforming to schema:\n{json_schema}"
 
@@ -129,8 +141,6 @@ class LLMAdapter:
             return self._validate_and_return(raw_output, schema)
         except (ValidationError, json.JSONDecodeError) as e:
             logger.warning(f"Live validation attempt 1 failed for '{agent_name}': {e}. Retrying once...")
-
-            # Attempt 2 (Retry with error feedback)
             retry_prompt = (
                 f"{enforced_prompt}\n\nYour previous output failed validation: {str(e)}.\n"
                 f"Fix the JSON output to strictly match schema:\n{json_schema}"
@@ -145,7 +155,6 @@ class LLMAdapter:
             return schema.model_validate(data)
         if isinstance(data, str):
             clean_str = data.strip()
-            # Strip markdown code fences if LLM wrapped in ```json
             if clean_str.startswith("```"):
                 lines = clean_str.splitlines()
                 if lines[0].startswith("```"):
