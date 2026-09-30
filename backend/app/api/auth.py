@@ -147,6 +147,18 @@ def require_permission(perm: Permission) -> Callable[[UserToken], UserToken]:
     def _dependency(user: UserToken = Depends(get_current_user)) -> UserToken:
         has_perm, msg = RBACManager.check_access(user, perm)
         if not has_perm:
+            from backend.app.models.schemas import SecurityEvent
+            from backend.app.api.state_manager import state_manager
+            from backend.app.api.websocket import ws_manager
+            sec_event = SecurityEvent(
+                event_type="rbac_permission_denied",
+                severity="HIGH",
+                agent_name="RBACManager",
+                description=f"User '{user.user_id}' ({user.role.value}) denied '{perm.value}': {msg}",
+            )
+            state_manager.security_events.append(sec_event)
+            state_manager.bus.log_security_event(sec_event.event_type, "RBACManager", sec_event.model_dump())
+            ws_manager.emit(event_type="security_event", payload=sec_event.model_dump(mode="json"))
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=msg)
         return user
     return _dependency
@@ -156,10 +168,23 @@ def require_role(*roles: Role) -> Callable[[UserToken], UserToken]:
     """Dependency factory checking specific role membership."""
     def _dependency(user: UserToken = Depends(get_current_user)) -> UserToken:
         if user.role not in roles:
+            from backend.app.models.schemas import SecurityEvent
+            from backend.app.api.state_manager import state_manager
+            from backend.app.api.websocket import ws_manager
             role_names = [r.value for r in roles]
+            msg = f"Access denied: Role '{user.role.value}' not in authorized roles {role_names}"
+            sec_event = SecurityEvent(
+                event_type="rbac_role_denied",
+                severity="HIGH",
+                agent_name="RBACManager",
+                description=f"User '{user.user_id}' ({user.role.value}) denied role requirement {role_names}",
+            )
+            state_manager.security_events.append(sec_event)
+            state_manager.bus.log_security_event(sec_event.event_type, "RBACManager", sec_event.model_dump())
+            ws_manager.emit(event_type="security_event", payload=sec_event.model_dump(mode="json"))
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied: Role '{user.role.value}' not in authorized roles {role_names}",
+                detail=msg,
             )
         return user
     return _dependency

@@ -42,9 +42,21 @@ def approve_plan(
 ):
     """Authorize resource plan. Strictly enforces Commander role and Ed25519 cryptographic signature."""
     if not isinstance(user, CommanderToken):
+        from backend.app.models.schemas import SecurityEvent
+        from backend.app.api.websocket import ws_manager
+        msg = f"Privilege escalation blocked: Role '{user.role.value}' is not authorized to sign dispatch authorizations."
+        sec_event = SecurityEvent(
+            event_type="privilege_escalation_attempt",
+            severity="CRITICAL",
+            agent_name="ApprovalGate",
+            description=msg,
+        )
+        state_manager.security_events.append(sec_event)
+        state_manager.bus.log_security_event(sec_event.event_type, "ApprovalGate", sec_event.model_dump())
+        ws_manager.emit(event_type="security_event", payload=sec_event.model_dump(mode="json"))
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Privilege escalation blocked: Role '{user.role.value}' is not authorized to sign dispatch authorizations.",
+            detail=msg,
         )
 
     result = state_manager.approve_plan(
