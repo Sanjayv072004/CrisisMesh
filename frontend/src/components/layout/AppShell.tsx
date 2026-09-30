@@ -260,19 +260,27 @@ export function AppShell() {
                     <div>
                       <div className="text-[10px] text-ops-muted uppercase">Total Cost</div>
                       <div className="font-bold text-ops-amber">
-                        {currentPlan.cost_breakdown.total_cost.toFixed(1)}
+                        {(currentPlan.cost_breakdown?.total_cost ?? 0).toFixed(1)}
                       </div>
                     </div>
                     <div>
                       <div className="text-[10px] text-ops-muted uppercase">Delay Harm</div>
                       <div className="font-semibold text-slate-200">
-                        {currentPlan.cost_breakdown.delay_harm.toFixed(1)}
+                        {(
+                          currentPlan.cost_breakdown?.delay_harm_cost ??
+                          currentPlan.cost_breakdown?.delay_harm ??
+                          0
+                        ).toFixed(1)}
                       </div>
                     </div>
                     <div>
                       <div className="text-[10px] text-ops-muted uppercase">Wasted Cost</div>
                       <div className="font-semibold text-slate-200">
-                        {currentPlan.cost_breakdown.wasted_cost.toFixed(1)}
+                        {(
+                          currentPlan.cost_breakdown?.wasted_dispatch_cost ??
+                          currentPlan.cost_breakdown?.wasted_cost ??
+                          0
+                        ).toFixed(1)}
                       </div>
                     </div>
                   </div>
@@ -280,24 +288,27 @@ export function AppShell() {
                   {/* Active Assignments */}
                   <div className="space-y-1">
                     <div className="text-[11px] text-slate-400 font-semibold uppercase">
-                      Assignments ({currentPlan.assignments.length}):
+                      Assignments ({currentPlan.assignments?.length || 0}):
                     </div>
-                    {currentPlan.assignments.map((a) => (
-                      <div
-                        key={`${a.unit_id}-${a.incident_id}`}
-                        className="flex items-center justify-between p-1.5 rounded bg-ops-bg border border-ops-border text-[11px]"
-                      >
-                        <span className="text-ops-cyan font-bold">{a.unit_id}</span>
-                        <span className="text-slate-500">&rarr;</span>
-                        <span className="text-white">{a.incident_id}</span>
-                        <span className="text-ops-muted">ETA {a.estimated_eta_minutes.toFixed(0)}m</span>
-                        {a.is_provisional && (
-                          <span className="text-[9px] px-1 rounded bg-amber-950 text-ops-amber border border-amber-800">
-                            PROVISIONAL
-                          </span>
-                        )}
-                      </div>
-                    ))}
+                    {(currentPlan.assignments || []).map((a) => {
+                      const eta = a.eta_minutes ?? a.estimated_eta_minutes ?? 0;
+                      return (
+                        <div
+                          key={`${a.unit_id}-${a.incident_id}`}
+                          className="flex items-center justify-between p-1.5 rounded bg-ops-bg border border-ops-border text-[11px]"
+                        >
+                          <span className="text-ops-cyan font-bold">{a.unit_id}</span>
+                          <span className="text-slate-500">&rarr;</span>
+                          <span className="text-white">{a.incident_id}</span>
+                          <span className="text-ops-muted">ETA {eta.toFixed(0)}m</span>
+                          {a.is_provisional && (
+                            <span className="text-[9px] px-1 rounded bg-amber-950 text-ops-amber border border-amber-800">
+                              PROVISIONAL
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (

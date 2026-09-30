@@ -64,8 +64,9 @@ export interface Hospital {
 export interface Assignment {
   unit_id: string;
   incident_id: string;
-  estimated_eta_minutes: number;
-  is_provisional: boolean;
+  eta_minutes?: number;
+  estimated_eta_minutes?: number;
+  is_provisional?: boolean;
 }
 
 export interface RunnerUpInfo {
@@ -75,10 +76,14 @@ export interface RunnerUpInfo {
 }
 
 export interface CostBreakdown {
-  total_cost: number;
-  delay_harm: number;
-  wasted_cost: number;
-  churn_penalty: number;
+  total_cost?: number;
+  delay_harm_cost?: number;
+  wasted_dispatch_cost?: number;
+  switching_penalty_cost?: number;
+  unserved_penalty_cost?: number;
+  delay_harm?: number;
+  wasted_cost?: number;
+  churn_penalty?: number;
 }
 
 export interface Plan {
