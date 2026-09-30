@@ -1,4 +1,4 @@
-﻿"""Impact Agent: Road Graph Analysis, Reachability Modeling & Veto Review."""
+"""Impact Agent: Road Graph Analysis, Reachability Modeling & Veto Review."""
 from __future__ import annotations
 import math
 from typing import Dict, List, Any, Optional
@@ -90,7 +90,7 @@ class ImpactAgent(BaseAgent):
                 state["pending_veto"] = veto.model_dump()
                 state["veto_count"] = state.get("veto_count", 0) + 1
             else:
-                state.pop("pending_veto", None)
+                state["pending_veto"] = None
 
         self.send_message(
             receiver="Resource",

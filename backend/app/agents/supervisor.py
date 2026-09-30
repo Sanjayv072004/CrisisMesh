@@ -1,4 +1,4 @@
-﻿"""Supervisor Agent: Event Router, Selective Re-Planner & Negotiation Budget Manager."""
+"""Supervisor Agent: Event Router, Selective Re-Planner & Negotiation Budget Manager."""
 from __future__ import annotations
 from typing import Dict, List, Any, Optional
 from backend.app.agents.base.agent import BaseAgent
@@ -25,10 +25,10 @@ class SupervisorAgent(BaseAgent):
 
     def route_event(self, event_type: str) -> List[str]:
         """Selective re-run mapping based on event category."""
-        if event_type == "unit_status_change":
+        if event_type in ("unit_status_change", "commander_rejection"):
             # Selective re-plan: Only affected agents re-run!
             return ["Resource", "Guardian", "Command"]
-        elif event_type == "road_blocked":
+        elif event_type in ("road_blocked", "road_block"):
             return ["Impact", "Resource", "Guardian", "Command"]
         elif event_type == "new_report":
             return ["Situation", "Verification", "Impact", "Resource", "Guardian", "Command"]

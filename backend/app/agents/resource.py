@@ -1,4 +1,4 @@
-﻿"""Resource Agent: Deterministic CP-SAT Allocation Solver & Negotiator."""
+"""Resource Agent: Deterministic CP-SAT Allocation Solver & Negotiator."""
 from __future__ import annotations
 from typing import Dict, List, Any, Optional, Set, Tuple
 from backend.app.agents.base.agent import BaseAgent
@@ -81,7 +81,7 @@ class ResourceAgent(BaseAgent):
                 "added_constraints": veto.constraints
             })
             state["negotiation_history"] = history
-            state.pop("pending_veto", None)
+            state["pending_veto"] = None
 
         plan = self.propose_plan(incidents, units, previous_plan=prev_plan)
         state["current_plan"] = plan.model_dump()

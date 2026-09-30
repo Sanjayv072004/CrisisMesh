@@ -1,0 +1,165 @@
+"""Authentication Service: Abstract Interface, Dev JWT Implementation, and FastAPI Dependencies."""
+from __future__ import annotations
+from abc import ABC, abstractmethod
+import os
+import time
+from typing import Optional, Dict, Any, Callable
+import jwt
+from fastapi import Depends, HTTPException, Security, status, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from backend.app.security.rbac import Role, Permission, UserToken, CommanderToken, RBACManager, RBACError
+from backend.app.security.crypto import CommanderKeyManager
+
+JWT_SECRET = os.getenv("CRISISMESH_JWT_SECRET", "crisismesh-dev-jwt-secret-key-32bytes-long!")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_SECONDS = 86400  # 24 hours
+
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+class AuthService(ABC):
+    """Abstract authentication service interface (swappable with Supabase Auth or Clerk)."""
+
+    @abstractmethod
+    def authenticate(self, username: str, password: str, role_hint: Optional[Role] = None) -> Optional[UserToken]:
+        pass
+
+    @abstractmethod
+    def create_token(self, token_model: UserToken) -> str:
+        pass
+
+    @abstractmethod
+    def verify_token(self, token_str: str) -> UserToken:
+        pass
+
+
+class DevJWTAuthService(AuthService):
+    """Deterministic development JWT authenticator supporting viewer, operator, and commander."""
+
+    DEV_USERS = {
+        "viewer": ("viewer123", Role.VIEWER),
+        "operator": ("operator123", Role.OPERATOR),
+        "commander": ("commander123", Role.COMMANDER),
+    }
+
+    def __init__(self, key_manager: Optional[CommanderKeyManager] = None):
+        self.key_manager = key_manager or CommanderKeyManager()
+
+    def authenticate(self, username: str, password: str, role_hint: Optional[Role] = None) -> Optional[UserToken]:
+        user_info = self.DEV_USERS.get(username.lower())
+        if not user_info:
+            return None
+        expected_pass, role = user_info
+        if password != expected_pass:
+            return None
+
+        # Allow role override if valid dev request
+        final_role = role_hint if role_hint else role
+
+        if final_role == Role.COMMANDER:
+            return CommanderToken(
+                user_id=username,
+                role=Role.COMMANDER,
+                public_key_hex=self.key_manager.get_public_key_hex(),
+                badge_number="CMD-BLR-001",
+                issued_at=time.time(),
+                expires_at=time.time() + JWT_EXPIRATION_SECONDS,
+            )
+        else:
+            return UserToken(
+                user_id=username,
+                role=final_role,
+                issued_at=time.time(),
+                expires_at=time.time() + JWT_EXPIRATION_SECONDS,
+            )
+
+    def create_token(self, token_model: UserToken) -> str:
+        payload = {
+            "sub": token_model.user_id,
+            "role": token_model.role.value,
+            "iat": int(token_model.issued_at),
+            "exp": int(token_model.expires_at or (time.time() + JWT_EXPIRATION_SECONDS)),
+        }
+        if isinstance(token_model, CommanderToken):
+            payload["public_key_hex"] = token_model.public_key_hex
+            if token_model.badge_number:
+                payload["badge_number"] = token_model.badge_number
+
+        return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+    def verify_token(self, token_str: str) -> UserToken:
+        try:
+            payload = jwt.decode(token_str, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            user_id = payload.get("sub")
+            role_str = payload.get("role")
+            if not user_id or not role_str:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+            role = Role(role_str)
+            if role == Role.COMMANDER:
+                return CommanderToken(
+                    user_id=user_id,
+                    role=Role.COMMANDER,
+                    public_key_hex=payload.get("public_key_hex", self.key_manager.get_public_key_hex()),
+                    badge_number=payload.get("badge_number"),
+                    issued_at=float(payload.get("iat", time.time())),
+                    expires_at=float(payload.get("exp", time.time() + JWT_EXPIRATION_SECONDS)),
+                )
+            else:
+                return UserToken(
+                    user_id=user_id,
+                    role=role,
+                    issued_at=float(payload.get("iat", time.time())),
+                    expires_at=float(payload.get("exp", time.time() + JWT_EXPIRATION_SECONDS)),
+                )
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
+        except (jwt.InvalidTokenError, ValueError) as e:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Token verification failed: {e}")
+
+
+# Singleton instance
+auth_service = DevJWTAuthService()
+
+
+def get_current_user(
+    auth_header: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+    token_query: Optional[str] = Query(None, alias="token"),
+) -> UserToken:
+    """Resolve current user from Authorization header or WebSocket query param."""
+    token_str = None
+    if auth_header and auth_header.credentials:
+        token_str = auth_header.credentials
+    elif token_query:
+        token_str = token_query
+
+    if not token_str:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication credentials (provide Bearer token or ?token= param)",
+        )
+
+    return auth_service.verify_token(token_str)
+
+
+def require_permission(perm: Permission) -> Callable[[UserToken], UserToken]:
+    """Dependency factory checking user permission."""
+    def _dependency(user: UserToken = Depends(get_current_user)) -> UserToken:
+        has_perm, msg = RBACManager.check_access(user, perm)
+        if not has_perm:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=msg)
+        return user
+    return _dependency
+
+
+def require_role(*roles: Role) -> Callable[[UserToken], UserToken]:
+    """Dependency factory checking specific role membership."""
+    def _dependency(user: UserToken = Depends(get_current_user)) -> UserToken:
+        if user.role not in roles:
+            role_names = [r.value for r in roles]
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied: Role '{user.role.value}' not in authorized roles {role_names}",
+            )
+        return user
+    return _dependency
