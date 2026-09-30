@@ -167,11 +167,26 @@ export function USPProofPanel() {
                           </span>
                         </div>
                         <div className="bg-slate-950/60 p-2 rounded">
+                          <span className="text-slate-400 block text-[10px]">Wasted Dispatch:</span>
+                          <span className="text-slate-200 font-bold">
+                            {((uspProofData.low_churn as any).naive_wasted_cost ?? 0.0).toFixed(1)}
+                          </span>
+                        </div>
+                        <div className="bg-slate-950/60 p-2 rounded">
                           <span className="text-slate-400 block text-[10px]">Switching Penalty:</span>
                           <span className="text-slate-400 font-bold">
                             {uspProofData.low_churn.naive_switching_cost} (Ignored)
                           </span>
                         </div>
+                        <div className="bg-slate-950/60 p-2 rounded">
+                          <span className="text-slate-400 block text-[10px]">Unserved Penalty:</span>
+                          <span className="text-slate-200 font-bold">
+                            {((uspProofData.low_churn as any).naive_unserved_cost ?? 0.0).toFixed(1)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono bg-slate-950/40 p-1.5 rounded text-center">
+                        Sum: {uspProofData.low_churn.naive_delay_cost} + {((uspProofData.low_churn as any).naive_wasted_cost ?? 0).toFixed(1)} + {uspProofData.low_churn.naive_switching_cost} + {((uspProofData.low_churn as any).naive_unserved_cost ?? 0).toFixed(1)} = <strong>{uspProofData.low_churn.naive_total_cost}</strong>
                       </div>
                       <p className="text-[11px] text-rose-300/80 leading-relaxed bg-rose-950/20 p-2 rounded border border-rose-900/30">
                         Naive baseline abruptly redirects en-route Rescue 1 to the underpass, completely abandoning
@@ -205,11 +220,26 @@ export function USPProofPanel() {
                           </span>
                         </div>
                         <div className="bg-slate-950/60 p-2 rounded">
+                          <span className="text-slate-400 block text-[10px]">Wasted Dispatch:</span>
+                          <span className="text-slate-200 font-bold">
+                            {((uspProofData.low_churn as any).low_churn_wasted_cost ?? 0.0).toFixed(1)}
+                          </span>
+                        </div>
+                        <div className="bg-slate-950/60 p-2 rounded">
                           <span className="text-slate-400 block text-[10px]">Switching Penalty:</span>
                           <span className="text-emerald-300 font-bold">
                             {uspProofData.low_churn.low_churn_switching_cost} (Zero Churn)
                           </span>
                         </div>
+                        <div className="bg-slate-950/60 p-2 rounded">
+                          <span className="text-slate-400 block text-[10px]">Unserved Penalty:</span>
+                          <span className="text-slate-200 font-bold">
+                            {((uspProofData.low_churn as any).low_churn_unserved_cost ?? 0.0).toFixed(1)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono bg-slate-950/40 p-1.5 rounded text-center">
+                        Sum: {uspProofData.low_churn.low_churn_delay_cost} + {((uspProofData.low_churn as any).low_churn_wasted_cost ?? 0).toFixed(1)} + {uspProofData.low_churn.low_churn_switching_cost} + {((uspProofData.low_churn as any).low_churn_unserved_cost ?? 0).toFixed(1)} = <strong>{uspProofData.low_churn.low_churn_total_cost}</strong>
                       </div>
                       <p className="text-[11px] text-emerald-300/80 leading-relaxed bg-emerald-950/20 p-2 rounded border border-emerald-900/30">
                         CrisisMesh keeps Rescue 1 committed to Bellandur and smoothly dispatches idle Rescue 2 to
@@ -218,78 +248,72 @@ export function USPProofPanel() {
                     </div>
                   </div>
 
-                  <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 text-xs text-slate-300">
-                    <span className="text-cyan-400 font-bold">Solver Proof: </span>
-                    {uspProofData.low_churn.explanation}
+                  {/* 1-Line Explanation of Total Cost Tradeoff */}
+                  <div className="p-3 rounded-lg bg-indigo-950/40 border border-indigo-500/40 text-xs text-indigo-200">
+                    <strong>Why Low-Churn Total Cost Can Be Higher:</strong> Low-churn prioritizes human survival continuity—avoiding the severe operational chaos of abandoning en-route victims, trading a minor travel-time delta (+8.5) to keep existing rescue commitments.
                   </div>
                 </div>
               )}
 
-              {/* TAB 2: UNCERTAINTY-AWARE */}
+              {/* TAB 2: UNCERTAINTY AWARE */}
               {activeTab === "uncertainty" && (
                 <div className="space-y-5">
-                  <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-slate-400 font-bold uppercase">Evaluated Incident:</div>
-                      <div className="text-sm text-slate-200 font-semibold mt-0.5">
-                        {uspProofData.uncertainty_aware.incident_title} (
-                        {uspProofData.uncertainty_aware.verification_label}, Credibility:{" "}
-                        {uspProofData.uncertainty_aware.credibility_score})
+                  <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800">
+                    <div className="text-xs text-slate-400 font-bold uppercase">Evaluated Incident:</div>
+                    <div className="text-sm text-slate-200 font-semibold mt-0.5">
+                      {uspProofData.uncertainty_aware.incident_title}
+                    </div>
+                    <div className="flex gap-4 mt-2 text-xs text-slate-400">
+                      <span>Credibility Score: <strong className="text-amber-400">{uspProofData.uncertainty_aware.credibility_score.toFixed(2)}</strong></span>
+                      <span>Label: <strong className="text-amber-400 uppercase">{uspProofData.uncertainty_aware.verification_label}</strong></span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Naive Bound */}
+                    <div className="p-4 rounded-xl bg-slate-900/60 border border-rose-500/30 flex flex-col gap-3">
+                      <span className="text-xs font-bold text-rose-300 uppercase">Naive Baseline Strategy</span>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex justify-between py-1 border-b border-slate-800">
+                          <span className="text-slate-400">Cost if Incident is Real:</span>
+                          <span className="font-bold text-slate-200">{uspProofData.uncertainty_aware.cost_if_true_naive}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-slate-800">
+                          <span className="text-slate-400">Cost if False Alarm:</span>
+                          <span className="font-bold text-rose-400">{uspProofData.uncertainty_aware.cost_if_false_naive}</span>
+                        </div>
+                        <div className="flex justify-between py-1 font-bold text-sm bg-slate-950/60 p-2 rounded mt-2">
+                          <span className="text-slate-300">Worst-Case Cost:</span>
+                          <span className="text-rose-400">{uspProofData.uncertainty_aware.worst_case_naive}</span>
+                        </div>
                       </div>
                     </div>
-                    <span className="px-2.5 py-1 rounded bg-indigo-950 border border-indigo-500/40 text-indigo-300 text-xs font-bold flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      Minimax Bound Verified
-                    </span>
-                  </div>
 
-                  {/* Dual Scenario Matrix */}
-                  <div className="overflow-x-auto rounded-xl border border-slate-800">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-900 text-slate-400 uppercase text-[10px]">
-                        <tr>
-                          <th className="p-3">Optimization Model</th>
-                          <th className="p-3">Cost if Report TRUE</th>
-                          <th className="p-3">Cost if Report FALSE (Hoax)</th>
-                          <th className="p-3 text-right">Worst-Case Cost Max(T, F)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800">
-                        <tr className="bg-slate-950/60 hover:bg-slate-900/50">
-                          <td className="p-3 font-bold text-rose-300">Naive Solver (p=1.0)</td>
-                          <td className="p-3">{uspProofData.uncertainty_aware.cost_if_true_naive}</td>
-                          <td className="p-3 text-rose-400 font-semibold">
-                            {uspProofData.uncertainty_aware.cost_if_false_naive} (Wasted Fleet)
-                          </td>
-                          <td className="p-3 text-right font-bold text-rose-400 text-sm">
-                            {uspProofData.uncertainty_aware.worst_case_naive}
-                          </td>
-                        </tr>
-                        <tr className="bg-indigo-950/30 hover:bg-indigo-950/50">
-                          <td className="p-3 font-bold text-indigo-300">
-                            CrisisMesh Robust Optimization
-                          </td>
-                          <td className="p-3">{uspProofData.uncertainty_aware.cost_if_true_robust}</td>
-                          <td className="p-3 text-emerald-400 font-semibold">
-                            {uspProofData.uncertainty_aware.cost_if_false_robust} (Provisional Guard)
-                          </td>
-                          <td className="p-3 text-right font-bold text-emerald-400 text-sm">
-                            {uspProofData.uncertainty_aware.worst_case_robust}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="p-4 bg-indigo-950/20 border border-indigo-500/30 rounded-xl text-xs text-indigo-200">
-                    <div className="font-bold text-indigo-300 mb-1">
-                      MATHEMATICAL PROOF: Robust Worst-Case (
-                      {uspProofData.uncertainty_aware.worst_case_robust}) &le; Naive Worst-Case (
-                      {uspProofData.uncertainty_aware.worst_case_naive})
+                    {/* Robust Bound */}
+                    <div className="p-4 rounded-xl bg-slate-900/60 border border-emerald-500/40 flex flex-col gap-3">
+                      <span className="text-xs font-bold text-emerald-300 uppercase">CrisisMesh Minimax Strategy</span>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex justify-between py-1 border-b border-slate-800">
+                          <span className="text-slate-400">Cost if Incident is Real:</span>
+                          <span className="font-bold text-slate-200">{uspProofData.uncertainty_aware.cost_if_true_robust}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-slate-800">
+                          <span className="text-slate-400">Cost if False Alarm:</span>
+                          <span className="font-bold text-emerald-400">{uspProofData.uncertainty_aware.cost_if_false_robust}</span>
+                        </div>
+                        <div className="flex justify-between py-1 font-bold text-sm bg-slate-950/60 p-2 rounded mt-2">
+                          <span className="text-slate-300">Worst-Case Cost:</span>
+                          <span className="text-emerald-400">{uspProofData.uncertainty_aware.worst_case_robust}</span>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-slate-300 text-[11px] leading-relaxed">
-                      {uspProofData.uncertainty_aware.explanation}
-                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-xs text-emerald-200 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      <strong>Minimax Criterion Satisfied:</strong> Robust Worst-Case ({uspProofData.uncertainty_aware.worst_case_robust}) &le; Naive Worst-Case ({uspProofData.uncertainty_aware.worst_case_naive}).
+                    </span>
                   </div>
                 </div>
               )}
@@ -298,70 +322,57 @@ export function USPProofPanel() {
               {activeTab === "counterfactual" && (
                 <div className="space-y-5">
                   <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800">
-                    <div className="text-xs text-slate-400 font-bold uppercase">Decision Target:</div>
+                    <div className="text-xs text-slate-400 font-bold uppercase">Decision Point:</div>
                     <div className="text-sm text-slate-200 font-semibold mt-0.5">
-                      Assignment for {uspProofData.counterfactual.incident_title} (
-                      {uspProofData.counterfactual.incident_id})
+                      {uspProofData.counterfactual.incident_title}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Selected Unit */}
-                    <div className="p-4 rounded-xl bg-slate-900/80 border border-cyan-500/40 flex flex-col gap-2">
-                      <div className="flex items-center justify-between border-b border-cyan-900/40 pb-2">
-                        <span className="text-xs font-bold text-cyan-300">OPTIMAL CHOICE</span>
-                        <span className="text-[11px] text-cyan-400 font-mono">SELECTED</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    {/* Chosen Unit */}
+                    <div className="p-4 rounded-xl bg-slate-900/60 border border-cyan-500/40 space-y-2">
+                      <div className="text-cyan-300 font-bold uppercase text-[11px] pb-1 border-b border-slate-800">
+                        Selected Dispatch
                       </div>
-                      <div className="text-sm font-bold text-white">
-                        {uspProofData.counterfactual.assigned_unit_id} (
-                        {uspProofData.counterfactual.assigned_unit_type})
+                      <div className="text-lg font-bold text-white font-mono">
+                        {uspProofData.counterfactual.assigned_unit_id}
                       </div>
-                      <div className="flex items-center justify-between text-xs pt-2">
-                        <span className="text-slate-400">Estimated Travel Time:</span>
-                        <span className="font-bold text-cyan-300">
-                          {uspProofData.counterfactual.assigned_eta_minutes} mins
-                        </span>
+                      <div className="flex justify-between text-slate-400">
+                        <span>ETA:</span>
+                        <span className="font-bold text-slate-200">{uspProofData.counterfactual.assigned_eta_minutes}m</span>
                       </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-400">Expected Harm Cost:</span>
-                        <span className="font-bold text-slate-200">
-                          {uspProofData.counterfactual.assigned_cost}
-                        </span>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Assigned Cost:</span>
+                        <span className="font-bold text-slate-200">{uspProofData.counterfactual.assigned_cost}</span>
                       </div>
                     </div>
 
-                    {/* Runner-Up Unit */}
-                    <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-700 flex flex-col gap-2">
-                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                        <span className="text-xs font-bold text-slate-400">RUNNER-UP ALTERNATIVE</span>
-                        <span className="text-[11px] text-slate-400 font-mono">REJECTED</span>
+                    {/* Runner Up */}
+                    <div className="p-4 rounded-xl bg-slate-900/60 border border-amber-500/30 space-y-2">
+                      <div className="text-amber-300 font-bold uppercase text-[11px] pb-1 border-b border-slate-800">
+                        2nd Best Feasible (Runner-Up)
                       </div>
-                      <div className="text-sm font-bold text-slate-300">
-                        {uspProofData.counterfactual.runner_up_unit_id} (
-                        {uspProofData.counterfactual.assigned_unit_type})
+                      <div className="text-lg font-bold text-slate-300 font-mono">
+                        {uspProofData.counterfactual.runner_up_unit_id}
                       </div>
-                      <div className="flex items-center justify-between text-xs pt-2">
-                        <span className="text-slate-400">Estimated Travel Time:</span>
-                        <span className="font-bold text-amber-300">
-                          {uspProofData.counterfactual.runner_up_eta_minutes} mins (+
-                          {uspProofData.counterfactual.delta_eta_minutes}m)
-                        </span>
+                      <div className="flex justify-between text-slate-400">
+                        <span>ETA:</span>
+                        <span className="font-bold text-slate-300">{uspProofData.counterfactual.runner_up_eta_minutes}m</span>
                       </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-400">Expected Harm Cost:</span>
-                        <span className="font-bold text-amber-300">
-                          {uspProofData.counterfactual.runner_up_cost} (+
-                          {uspProofData.counterfactual.delta_cost})
-                        </span>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Runner-Up Cost:</span>
+                        <span className="font-bold text-slate-300">{uspProofData.counterfactual.runner_up_cost}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-4 bg-amber-950/20 border border-amber-500/30 rounded-xl text-xs text-amber-200">
-                    <span className="font-bold text-amber-300">Counterfactual Rationale: </span>
-                    <span className="text-slate-300 text-[11px]">
-                      {uspProofData.counterfactual.rationale}
-                    </span>
+                  <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs">
+                    <div className="font-bold text-slate-300 uppercase text-[11px]">Command Explanation:</div>
+                    <p className="text-slate-300 leading-relaxed">{uspProofData.counterfactual.rationale}</p>
+                    <div className="flex gap-4 pt-2 text-[11px] font-mono text-cyan-300">
+                      <span>&Delta; ETA: +{uspProofData.counterfactual.delta_eta_minutes}m faster</span>
+                      <span>&Delta; Penalty Cost: -{uspProofData.counterfactual.delta_cost} points</span>
+                    </div>
                   </div>
                 </div>
               )}

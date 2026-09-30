@@ -95,3 +95,37 @@ def block_road(
     if "error" in result:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
     return result
+
+
+@router.get("/map/graph")
+def get_map_graph():
+    """Return the road network graph with node coordinates and edge blockage statuses."""
+    engine = state_manager.orchestrator.impact.engine
+    nodes = []
+    for node_id, data in engine.graph.nodes(data=True):
+        nodes.append({
+            "id": node_id,
+            "name": data.get("name", node_id),
+            "lat": float(data.get("lat", 0.0)),
+            "lon": float(data.get("lon", 0.0)),
+        })
+    edges = []
+    for u, v, data in engine.graph.edges(data=True):
+        edges.append({
+            "u": u,
+            "v": v,
+            "is_blocked": bool(data.get("is_blocked", False)),
+            "flood_depth_m": float(data.get("flood_depth_m", 0.0)),
+            "travel_time_mins": float(data.get("travel_time_mins", 5.0)),
+            "coordinates": [
+                [float(engine.graph.nodes[u]["lon"]), float(engine.graph.nodes[u]["lat"])],
+                [float(engine.graph.nodes[v]["lon"]), float(engine.graph.nodes[v]["lat"])],
+            ]
+        })
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "total_nodes": len(nodes),
+        "total_edges": len(edges),
+        "blocked_count": sum(1 for e in edges if e["is_blocked"])
+    }
