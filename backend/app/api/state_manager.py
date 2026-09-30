@@ -75,6 +75,9 @@ class CrisisStateManager:
 
         self.state = {
             "incidents": {},
+            "raw_reports": {r["id"]: r for r in self.scenario_data.get("raw_reports", [])},
+            "sensors": copy.deepcopy(self.scenario_data.get("sensors", [])),
+            "source_registry": copy.deepcopy(self.scenario_data.get("source_registry", {})),
             "units": copy.deepcopy(self.scenario_data.get("units", [])),
             "hospitals": copy.deepcopy(self.scenario_data.get("hospitals", [])),
             "verification_labels": {},
@@ -237,6 +240,15 @@ class CrisisStateManager:
             from backend.app.models.schemas import UnitType, VerificationLabel
             inc_id = f"inc_{res.report.id}"
             is_adversarial = res.report.metadata.get("is_adversarial", False)
+            raw_reports = self.state.setdefault("raw_reports", {})
+            raw_reports[res.report.id] = {
+                "id": res.report.id,
+                "text": res.report.text,
+                "source_id": source_id,
+                "timestamp": res.report.timestamp.isoformat(),
+                "lat": lat,
+                "lon": lon,
+            }
             inc_obj = IncidentRecord(
                 id=inc_id,
                 title=f"Report from {source_id}",
@@ -249,8 +261,10 @@ class CrisisStateManager:
                 is_life_threatening=False,
                 reported_at=datetime.now(timezone.utc),
                 confidence=res.report.metadata.get("confidence", 0.8),
+                extraction_confidence=res.report.metadata.get("confidence", 0.8),
                 verification_label=VerificationLabel.UNVERIFIED if not is_adversarial else VerificationLabel.CONFLICTING,
-                credibility_score=res.report.metadata.get("confidence", 0.5),
+                credibility_score=0.5,
+                report_ids=[res.report.id],
             )
             self.state["incidents"][inc_id] = inc_obj.model_dump(mode="json")
             self.state["trigger_event_type"] = "new_report"

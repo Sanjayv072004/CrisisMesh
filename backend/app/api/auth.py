@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import os
 import time
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Tuple, Any, Callable
 import jwt
 from fastapi import Depends, HTTPException, Security, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -13,6 +13,12 @@ from backend.app.security.crypto import CommanderKeyManager
 JWT_SECRET = os.getenv("CRISISMESH_JWT_SECRET", "crisismesh-dev-jwt-secret-key-32bytes-long!")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_SECONDS = 86400  # 24 hours
+
+
+def is_demo_mode() -> bool:
+    """Return True only if CRISISMESH_DEMO_MODE is explicitly enabled. Defaults to FALSE."""
+    return os.getenv("CRISISMESH_DEMO_MODE", "false").lower() in ("true", "1", "yes")
+
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -34,19 +40,31 @@ class AuthService(ABC):
 
 
 class DevJWTAuthService(AuthService):
-    """Deterministic development JWT authenticator supporting viewer, operator, and commander."""
+    """Deterministic development JWT authenticator supporting viewer, operator, and commander.
 
-    DEV_USERS = {
-        "viewer": ("viewer123", Role.VIEWER),
-        "operator": ("operator123", Role.OPERATOR),
-        "commander": ("commander123", Role.COMMANDER),
-    }
+    CRITICAL SECURITY INVARIANT:
+    Demo accounts exist ONLY when CRISISMESH_DEMO_MODE=true.
+    When demo mode is unset or false, dev_users is empty and authentication fails.
+    """
+
+    @property
+    def dev_users(self) -> Dict[str, Tuple[str, Role]]:
+        if not is_demo_mode():
+            return {}
+        return {
+            "viewer": ("viewer123", Role.VIEWER),
+            "operator": ("operator123", Role.OPERATOR),
+            "commander": ("commander123", Role.COMMANDER),
+        }
+
+    # Backward compatibility class-level attribute mapping to the dynamic property
+    DEV_USERS = property(lambda self: self.dev_users)
 
     def __init__(self, key_manager: Optional[CommanderKeyManager] = None):
         self.key_manager = key_manager or CommanderKeyManager()
 
     def authenticate(self, username: str, password: str, role_hint: Optional[Role] = None) -> Optional[UserToken]:
-        user_info = self.DEV_USERS.get(username.lower())
+        user_info = self.dev_users.get(username.lower())
         if not user_info:
             return None
         expected_pass, role = user_info

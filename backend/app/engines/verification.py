@@ -1,4 +1,4 @@
-﻿"""Pure Deterministic Verification Engine.
+"""Pure Deterministic Verification Engine.
 
 This module provides deterministic mathematical tools (NO LLM) to:
 1. Cluster duplicate/coordinated reports using text similarity (sentence-transformers with TF-IDF fallback)
@@ -44,7 +44,7 @@ def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) ->
 
 def compute_text_similarity_matrix(texts: List[str]) -> List[List[float]]:
     """Compute pairwise text similarity matrix.
-    
+
     Uses sentence-transformers if available, otherwise falls back to TF-IDF cosine similarity.
     """
     n = len(texts)
@@ -95,10 +95,10 @@ def cluster_duplicates(
     time_threshold_mins: float = 60.0,
 ) -> List[ReportCluster]:
     """Group duplicate/coordinated reports into clusters.
-    
+
     A report cluster counts as ONE corroboration set, so 30 near-identical reports
     from the same botnet or user cannot artificially confirm themselves.
-    
+
     Clustering condition: Two reports belong in the same cluster if:
     1. Text similarity >= text_threshold (semantic or TF-IDF),
     2. Haversine distance <= dist_threshold_km, AND
@@ -167,7 +167,7 @@ def credibility_score(
     half_life_hours: float = 4.0,
 ) -> float:
     """Compute the deterministic credibility score in [0.0, 1.0].
-    
+
     Formula components:
     -------------------
     1. SOURCE RELIABILITY PRIOR (P_source):
@@ -175,7 +175,7 @@ def credibility_score(
        (e.g., official sensor = 0.95, emergency services = 0.90, verified NGO = 0.80,
        regular citizen = 0.45, anonymous/unverified = 0.25).
        We compute the pooled prior as the max prior among independent sources in the cluster.
-    
+
     2. INDEPENDENT CORROBORATION (C_indep):
        Reports from the SAME source inside the cluster count only ONCE.
        If k = len(unique_sources) >= 1:
@@ -184,7 +184,7 @@ def credibility_score(
          Corroborated prior = P_source + (1.0 - P_source) * 0.45 * bonus.
          This mathematically guarantees that 30 duplicate reports from 1 source
          CANNOT confirm themselves.
-    
+
     3. SENSOR AGREEMENT (A_sensor):
        Physical sensors provide ground-truth verification.
        Nearby sensors within `max_sensor_dist_km` and within 3 hours of `now` are evaluated:
@@ -192,7 +192,7 @@ def credibility_score(
          - If a water sensor indicates normal dry level (< 0.1m) when a major flood is claimed:
            Significant penalty (-0.40) due to sensor contradiction.
          - If no physical sensors exist nearby: Neutral (0.0 change).
-    
+
     4. TIME DECAY (D_time):
        Disaster situations evolve rapidly. Older reports lose operational value.
        Modeled via half-life exponential decay:
@@ -200,48 +200,74 @@ def credibility_score(
          decay = exp(-ln(2) * delta_t_hours / half_life_hours).
          Fresh reports (delta_t ~ 0) have decay ~ 1.0; 12-hour old reports decay to 0.125.
     """
-    if not report_cluster.reports:
-        return 0.0
+    if isinstance(report_cluster, list):
+        reports = report_cluster
+        if not reports:
+            return 0.0
+        clusters = cluster_duplicates(reports) if len(reports) > 1 else [ReportCluster(reports=reports)]
+    else:
+        if not report_cluster.reports:
+            return 0.0
+        reports = report_cluster.reports
+        clusters = [report_cluster]
 
-    # Ensure cluster metadata is current
-    report_cluster.update_metadata()
+    for c in clusters:
+        c.update_metadata()
 
-    # 1. Source Reliability Prior
-    unique_sources = report_cluster.unique_sources
-    source_priors = [source_registry.get(src, 0.25) for src in unique_sources]
-    p_source = max(source_priors) if source_priors else 0.25
+    centroid_lat = sum(c.centroid_lat for c in clusters) / len(clusters)
+    centroid_lon = sum(c.centroid_lon for c in clusters) / len(clusters)
+    latest_timestamp = max(c.latest_timestamp for c in clusters)
 
-    # 2. Independent Corroboration Term
-    k_sources = len(unique_sources)
+    # 1 & 2. Source Reliability Prior & Strict Independent Corroboration:
+    # Two reports count as independent corroboration only if their source_ids differ
+    # AND they are not in one duplicate cluster.
+    candidate_pairs = []
+    for c_idx, cl in enumerate(clusters):
+        for src in cl.unique_sources:
+            prior = source_registry.get(src, 0.25)
+            candidate_pairs.append((prior, c_idx, src))
+
+    candidate_pairs.sort(key=lambda x: x[0], reverse=True)
+    used_clusters = set()
+    used_sources = set()
+    independent_sources = []
+    for prior, c_idx, src in candidate_pairs:
+        if c_idx not in used_clusters and src not in used_sources:
+            used_clusters.add(c_idx)
+            used_sources.add(src)
+            independent_sources.append(src)
+
+    k_sources = len(independent_sources)
+    p_source = max([source_registry.get(src, 0.25) for src in independent_sources], default=0.25)
+
     if k_sources <= 1:
         corrob_bonus = 0.0
     else:
-        # Diminishing returns: 2 sources -> 0.45 * 0.45 = ~0.20 boost; 5 sources -> ~0.40 boost
         corrob_bonus = 1.0 - math.exp(-0.6 * (k_sources - 1))
 
-    # Base credibility incorporating independent corroboration
     score = p_source + (1.0 - p_source) * 0.45 * corrob_bonus
 
-    # 3. Sensor Agreement Term
-    nearby_sensors = [
-        s for s in sensors
-        if haversine_distance_km(report_cluster.centroid_lat, report_cluster.centroid_lon, s.lat, s.lon) <= max_sensor_dist_km
-    ]
+    # 3. Sensor Agreement Term using per-sensor coverage_radius_m
+    nearby_sensors = []
+    for s in sensors:
+        dist_m = haversine_distance_km(centroid_lat, centroid_lon, s.lat, s.lon) * 1000.0
+        radius_m = getattr(s, "coverage_radius_m", None)
+        if radius_m is None:
+            radius_m = max_sensor_dist_km * 1000.0
+        if dist_m <= radius_m:
+            nearby_sensors.append(s)
 
     if nearby_sensors:
-        # Check highest agreement or contradiction
         sensor_confirmed = any(s.value >= s.flood_threshold for s in nearby_sensors)
         sensor_denied = any(s.value < 0.1 for s in nearby_sensors)
 
         if sensor_confirmed:
-            # Physical sensor directly backs the report
             score = score + (1.0 - score) * 0.60
         elif sensor_denied and not sensor_confirmed:
-            # Physical sensor contradicts the report (dry road)
             score = max(0.05, score * 0.40)
 
     # 4. Time Decay Term
-    elapsed_seconds = max(0.0, (now - report_cluster.latest_timestamp).total_seconds())
+    elapsed_seconds = max(0.0, (now - latest_timestamp).total_seconds())
     elapsed_hours = elapsed_seconds / 3600.0
     time_decay = math.exp(-math.log(2.0) * elapsed_hours / half_life_hours)
 
@@ -256,7 +282,7 @@ def label(
     unverified_threshold: float = 0.40,
 ) -> str:
     """Classify verification status with configurable thresholds.
-    
+
     Returns:
     - 'conflicting': If contradictory claims or contradictory sensors are detected.
     - 'confirmed': If score >= confirmed_threshold.

@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: crisismesh-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - CRISISMESH_DEMO_MODE=true
+      - CRISISMESH_MODE=MOCK
+      - PORT=8000
+      - HOST=0.0.0.0
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    networks:
+      - public-net
+      - internal-net
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: crisismesh-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_DEMO_AUTOLOGIN=true
+      - NODE_ENV=production
+    networks:
+      - public-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Optional Postgres profile for persistent storage
+  postgres:
+    image: postgres:16-alpine
+    container_name: crisismesh-postgres
+    profiles: ["postgres", "storage"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: crisismesh
+      POSTGRES_USER: crisismesh
+      POSTGRES_PASSWORD: crisismesh_secure_dev_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal-net
+    # Ports NOT exposed externally: only reachable on internal-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crisismesh"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional Redis profile for message queue caching
+  redis:
+    image: redis:7-alpine
+    container_name: crisismesh-redis
+    profiles: ["redis", "cache"]
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - internal-net
+    # Ports NOT exposed externally: only reachable on internal-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  public-net:
+    driver: bridge
+  internal-net:
+    driver: bridge
+    internal: true  # Isolated: no internet access, solver/audit store cannot be probed externally
+
+volumes:
+  postgres-data:
+  redis-data:

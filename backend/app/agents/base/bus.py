@@ -37,7 +37,7 @@ class MessageBus:
 
     def publish(self, message: Message) -> None:
         """Publish a typed message to the bus.
-        
+
         1. Appends to the in-memory event log.
         2. Appends to the tamper-evident hash-chained audit log.
         3. Dispatches to all active subscribers.

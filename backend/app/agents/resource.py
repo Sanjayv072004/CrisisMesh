@@ -23,11 +23,12 @@ class ResourceAgent(BaseAgent):
         self.solver = solver or AllocationEngine(AllocationConfig())
         self.impact = impact_engine or ImpactEngine(force_synthetic=True)
         tools = {
-            "solve_plan": self.solver.solve,
-            "diff_plans": self.solver.diff_plans,
+            "solve_plan": lambda *args, **kwargs: self.solver.solve(*args, **kwargs),
+            "diff_plans": lambda *args, **kwargs: self.solver.diff_plans(*args, **kwargs),
         }
         super().__init__(name="Resource", role="CP-SAT Allocation Solver", manifest=manifest, bus=bus, tools=tools)
         self.forbidden_constraints: Set[Tuple[str, str]] = set()
+        self.cached_matrix: Optional[Dict[Tuple[str, str], float]] = None
 
     def propose_plan(
         self,
@@ -37,7 +38,16 @@ class ResourceAgent(BaseAgent):
         trace_id: str = "trace-res"
     ) -> Plan:
         """Formulate allocation plan using CP-SAT solver."""
-        matrix = self.impact.travel_time_matrix(units, incidents)
+        if self.cached_matrix is None:
+            matrix = self.impact.travel_time_matrix(units, incidents)
+            self.cached_matrix = dict(matrix)
+        else:
+            matrix = dict(self.cached_matrix)
+            for u in units:
+                for inc in incidents:
+                    if (u.id, inc.id) not in matrix:
+                        matrix[(u.id, inc.id)] = round(self.impact.compute_travel_time(u.lat, u.lon, inc.lat, inc.lon)[0], 1)
+
         plan: Plan = self.call_tool(
             "solve_plan",
             trace_id=trace_id,
@@ -72,6 +82,9 @@ class ResourceAgent(BaseAgent):
             veto = Veto(**pending_veto)
             for pair in veto.constraints:
                 self.forbidden_constraints.add(tuple(pair))
+
+            # Sync matrix with physical reachability from Impact upon receiving Veto
+            self.cached_matrix = self.impact.travel_time_matrix(units, incidents)
 
             # Record negotiation history
             history = list(state.get("negotiation_history", []))

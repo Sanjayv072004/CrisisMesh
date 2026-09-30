@@ -1,4 +1,4 @@
-﻿"""Strict Pydantic v2 Domain Models for CrisisMesh.
+"""Strict Pydantic v2 Domain Models for CrisisMesh.
 
 All models enforce extra="forbid", strict type validation, and range limits.
 """
@@ -67,10 +67,12 @@ class IncidentRecord(StrictBase):
     required_unit_type: UnitType = Field(..., description="Type of resource needed")
     is_life_threatening: bool = Field(default=False, description="Flag for immediate mortality risk")
     reported_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Original report timestamp")
-    confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="LLM extraction confidence")
+    extraction_confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="LLM extraction confidence")
+    confidence: Optional[float] = Field(default=0.8, description="Legacy alias for extraction_confidence")
     ambiguous_fields: List[str] = Field(default_factory=list, description="Fields needing clarification")
     verification_label: VerificationLabel = Field(default=VerificationLabel.UNVERIFIED, description="Verification status")
     credibility_score: float = Field(default=0.5, ge=0.0, le=1.0, description="Deterministic credibility score")
+    report_ids: List[str] = Field(default_factory=list, description="Raw report IDs linked to this incident")
 
 
 class SensorReading(StrictBase):
@@ -83,6 +85,7 @@ class SensorReading(StrictBase):
     value: float = Field(..., description="Observed value")
     unit: str = Field(..., description="Measurement unit (e.g. meters, mm/hr)")
     flood_threshold: float = Field(default=0.5, description="Threshold above which flood is confirmed")
+    coverage_radius_m: float = Field(default=1000.0, description="Geographic corroboration radius in meters")
 
 
 # -------------------------------------------------------------------------
@@ -177,6 +180,13 @@ class Plan(StrictBase):
     status: str = Field(default="PROPOSED")  # PROPOSED, VETOED, APPROVED, REJECTED
 
 
+class ChangeKind(str, Enum):
+    """Classification of plan allocation modifications."""
+    FORCED_UNIT_LOSS = "forced_unit_loss"
+    OPTIMIZATION_REDIRECT = "optimization_redirect"
+    NEW_ASSIGNMENT = "new_assignment"
+
+
 class PlanChange(StrictBase):
     """Detailed change for a unit in a PlanDiff."""
     unit_id: str
@@ -184,6 +194,9 @@ class PlanChange(StrictBase):
     to_incident_id: Optional[str] = None
     reason: str
     cost_delta: float
+    change_kind: ChangeKind = ChangeKind.OPTIMIZATION_REDIRECT
+    eta_before: Optional[float] = None
+    eta_after: Optional[float] = None
     requires_human_decision: bool = False
 
 

@@ -1,6 +1,6 @@
 """LangGraph Multi-Agent Orchestration Workflow with StateGraph and Checkpointing."""
 from __future__ import annotations
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from backend.app.agents.base.bus import MessageBus
@@ -25,15 +25,29 @@ class CrisisMeshOrchestrator:
         bus: Optional[MessageBus] = None,
         checkpointer: Optional[Any] = None,
         approval_gate: Optional[ApprovalGate] = None,
+        sensors: Optional[List[Any]] = None,
+        source_registry: Optional[Dict[str, float]] = None,
+        raw_reports: Optional[Dict[str, Any]] = None,
+        llm_adapter: Optional[Any] = None,
     ):
         self.bus = bus or MessageBus()
         self.checkpointer = checkpointer or MemorySaver()
         self.approval_gate = approval_gate or ApprovalGate()
+        self.sensors = sensors
+        self.source_registry = source_registry
+        self.raw_reports = raw_reports
+        self.llm_adapter = llm_adapter
+        self.llm = llm_adapter
 
         # Instantiate the 7 agents sharing the common MessageBus
         self.supervisor = SupervisorAgent(bus=self.bus)
-        self.situation = SituationAgent(bus=self.bus)
-        self.verification = VerificationAgent(bus=self.bus)
+        self.situation = SituationAgent(bus=self.bus, llm_adapter=self.llm_adapter)
+        self.verification = VerificationAgent(
+            bus=self.bus,
+            source_registry=self.source_registry,
+            sensors=self.sensors,
+            raw_reports=self.raw_reports,
+        )
         self.impact = ImpactAgent(bus=self.bus)
         self.resource = ResourceAgent(bus=self.bus, impact_engine=self.impact.engine)
         self.guardian = GuardianAgent(bus=self.bus)
@@ -82,9 +96,9 @@ class CrisisMeshOrchestrator:
         # 5. Verification -> Clarification loop back to Situation or proceed to Impact
         def verification_router(state: DisasterState) -> str:
             msg_log = self.bus.get_trace()
-            last_msg = msg_log[-1] if msg_log else None
-            # If verification dispatched ClarificationRequest to Situation and not yet answered
-            if last_msg and last_msg.type == "ClarificationRequest" and state.get("_clarification_loop_count", 0) < 1:
+            reqs = [m for m in msg_log if m.type == "ClarificationRequest"]
+            resps = [m for m in msg_log if m.type == "ClarificationResponse"]
+            if len(reqs) > len(resps) and state.get("_clarification_loop_count", 0) < 1:
                 state["_clarification_loop_count"] = state.get("_clarification_loop_count", 0) + 1
                 return "situation"
             return "impact"

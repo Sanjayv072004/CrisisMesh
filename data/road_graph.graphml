@@ -1,0 +1,139 @@
+<?xml version='1.0' encoding='utf-8'?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"><key id="d7" for="edge" attr.name="flood_depth_m" attr.type="double"/>
+<key id="d6" for="edge" attr.name="is_blocked" attr.type="string"/>
+<key id="d5" for="edge" attr.name="travel_time_mins" attr.type="double"/>
+<key id="d4" for="edge" attr.name="speed_kmh" attr.type="double"/>
+<key id="d3" for="edge" attr.name="length_m" attr.type="double"/>
+<key id="d2" for="node" attr.name="lon" attr.type="double"/>
+<key id="d1" for="node" attr.name="lat" attr.type="double"/>
+<key id="d0" for="node" attr.name="name" attr.type="string"/>
+<graph edgedefault="undirected"><node id="silk_board">
+  <data key="d0">Silk Board Junction</data>
+  <data key="d1">12.9176</data>
+  <data key="d2">77.6238</data>
+</node>
+<node id="hsr_layout">
+  <data key="d0">HSR Layout Sector 6</data>
+  <data key="d1">12.9116</data>
+  <data key="d2">77.6388</data>
+</node>
+<node id="koramangala">
+  <data key="d0">Koramangala 4th Block</data>
+  <data key="d1">12.9345</data>
+  <data key="d2">77.6265</data>
+</node>
+<node id="bellandur">
+  <data key="d0">Bellandur EcoSpace</data>
+  <data key="d1">12.926</data>
+  <data key="d2">77.6762</data>
+</node>
+<node id="orr_underpass">
+  <data key="d0">Outer Ring Road Underpass</data>
+  <data key="d1">12.931</data>
+  <data key="d2">77.685</data>
+</node>
+<node id="marathahalli">
+  <data key="d0">Marathahalli Bridge</data>
+  <data key="d1">12.9591</data>
+  <data key="d2">77.6974</data>
+</node>
+<node id="hosp_st_johns">
+  <data key="d0">St. Johns Hospital</data>
+  <data key="d1">12.9312</data>
+  <data key="d2">77.6202</data>
+</node>
+<node id="hosp_sakra">
+  <data key="d0">Sakra World Hospital</data>
+  <data key="d1">12.9285</data>
+  <data key="d2">77.6842</data>
+</node>
+<node id="hosp_manipal">
+  <data key="d0">Manipal Hospital HAL</data>
+  <data key="d1">12.9583</data>
+  <data key="d2">77.6485</data>
+</node>
+<edge source="silk_board" target="hsr_layout">
+  <data key="d3">1757.30519726511</data>
+  <data key="d4">35.0</data>
+  <data key="d5">3.0125231953116174</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+<edge source="silk_board" target="koramangala">
+  <data key="d3">1901.8403248799932</data>
+  <data key="d4">30.0</data>
+  <data key="d5">3.8036806497599858</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+<edge source="silk_board" target="hosp_st_johns">
+  <data key="d3">1561.770889975733</data>
+  <data key="d4">25.0</data>
+  <data key="d5">3.7482501359417593</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+<edge source="hsr_layout" target="bellandur">
+  <data key="d3">4358.224177311243</data>
+  <data key="d4">35.0</data>
+  <data key="d5">7.471241446819274</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+<edge source="koramangala" target="hosp_st_johns">
+  <data key="d3">775.116458496691</data>
+  <data key="d4">25.0</data>
+  <data key="d5">1.8602795003920585</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+<edge source="koramangala" target="hosp_manipal">
+  <data key="d3">3561.964650857857</data>
+  <data key="d4">30.0</data>
+  <data key="d5">7.123929301715714</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+<edge source="koramangala" target="bellandur">
+  <data key="d3">5468.553575353842</data>
+  <data key="d4">30.0</data>
+  <data key="d5">10.937107150707684</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+<edge source="bellandur" target="orr_underpass">
+  <data key="d3">1103.9341392405079</data>
+  <data key="d4">25.0</data>
+  <data key="d5">2.649441934177219</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+<edge source="bellandur" target="hosp_sakra">
+  <data key="d3">910.488475186765</data>
+  <data key="d4">30.0</data>
+  <data key="d5">1.82097695037353</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+<edge source="orr_underpass" target="hosp_sakra">
+  <data key="d3">291.1939572956342</data>
+  <data key="d4">20.0</data>
+  <data key="d5">0.8735818718869027</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+<edge source="orr_underpass" target="marathahalli">
+  <data key="d3">3401.2814111161983</data>
+  <data key="d4">40.0</data>
+  <data key="d5">5.101922116674297</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+<edge source="marathahalli" target="hosp_manipal">
+  <data key="d3">5299.697796828699</data>
+  <data key="d4">35.0</data>
+  <data key="d5">9.085196223134913</data>
+  <data key="d6">False</data>
+  <data key="d7">0.0</data>
+</edge>
+</graph></graphml>

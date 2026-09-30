@@ -1,4 +1,4 @@
-﻿"""Impact Engine: Road Graph Network, Reachability, Flood Blockages, and Veto Review."""
+"""Impact Engine: Road Graph Network, Reachability, Flood Blockages, and Veto Review."""
 from __future__ import annotations
 import math
 import logging
@@ -178,7 +178,7 @@ class ImpactEngine:
 
         if start_node == end_node:
             local_km = haversine_distance_km(start_lat, start_lon, end_lat, end_lon)
-            return max(1.0, (local_km / 20.0) * 60.0), [start_node]
+            return max(0.2, round((local_km / 20.0) * 60.0, 2)), [start_node]
 
         active_g = nx.subgraph_view(
             self.graph,

@@ -26,7 +26,7 @@ SPOTLIGHT_END = "<<<END_UNTRUSTED_CIVILIAN_REPORT>>>"
 
 def sanitize_text(text: str, max_length: int = 2000) -> Tuple[str, str, int]:
     """Sanitize raw incoming text and apply spotlighting delimiters.
-    
+
     Returns:
         (sanitized_clean_text, spotlit_delimited_text, stripped_zero_width_count)
     """

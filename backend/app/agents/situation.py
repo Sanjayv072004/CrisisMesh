@@ -1,4 +1,4 @@
-﻿"""Situation Agent: Quarantined Information Extractor.
+"""Situation Agent: Quarantined Information Extractor.
 
 Possesses ZERO tools and ZERO secrets. Reads untrusted report text and parses it into
 strictly validated IncidentRecord models matching Pydantic schemas.
@@ -84,22 +84,44 @@ class SituationAgent(BaseAgent):
 
     def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Process incoming raw reports or clarification requests."""
-        # Check for clarification request
-        msg_log = state.get("message_log", [])
-        clarification_req = next((m for m in reversed(msg_log) if m.get("type") == "ClarificationRequest"), None)
-        if clarification_req:
-            p = clarification_req.get("payload", {})
-            self.handle_clarification(p.get("incident_id", ""), p.get("ambiguous_fields", []), clarification_req.get("trace_id", "trace-cl"))
+        # 1. Check for clarification request from VerificationAgent
+        bus_trace = self.bus.get_trace()
+        reqs = [m for m in bus_trace if m.type == "ClarificationRequest"]
+        resps = [m for m in bus_trace if m.type == "ClarificationResponse"]
+        if len(reqs) > len(resps):
+            unanswered = reqs[len(resps)]
+            p = unanswered.payload or {}
+            inc_id = p.get("incident_id", "")
+            amb_fields = p.get("ambiguous_fields", [])
+            self.handle_clarification(inc_id, amb_fields, unanswered.trace_id)
+            if inc_id in state.get("incidents", {}):
+                inc_val = state["incidents"][inc_id]
+                if isinstance(inc_val, dict):
+                    inc_val["ambiguous_fields"] = []
+                elif hasattr(inc_val, "ambiguous_fields"):
+                    inc_val.ambiguous_fields = []
+            state["active_agents"] = list(set(state.get("active_agents", [])) | {self.name})
             return state
 
-        # Ingest new reports
-        raw_reports = state.get("raw_reports", [])
-        incidents = dict(state.get("incidents", {}))
-        for r_data in raw_reports:
-            r = Report(**r_data) if isinstance(r_data, dict) else r_data
-            inc = self.extract_incident(r)
-            incidents[inc.id] = inc.model_dump()
+        # 2. Ingest new reports only if incidents is empty
+        raw_reports_val = state.get("raw_reports", [])
+        if isinstance(raw_reports_val, dict):
+            raw_reports_list = list(raw_reports_val.values())
+        else:
+            raw_reports_list = list(raw_reports_val)
 
-        state["incidents"] = incidents
+        incidents = dict(state.get("incidents", {}))
+        if not incidents:
+            for r_data in raw_reports_list:
+                if isinstance(r_data, dict):
+                    r = Report(**r_data)
+                elif hasattr(r_data, "source_id"):
+                    r = r_data
+                else:
+                    continue
+                inc = self.extract_incident(r)
+                incidents[inc.id] = inc.model_dump()
+            state["incidents"] = incidents
+
         state["active_agents"] = list(set(state.get("active_agents", [])) | {self.name})
         return state

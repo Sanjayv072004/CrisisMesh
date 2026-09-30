@@ -1,16 +1,21 @@
-﻿"""Guardian Agent: Independent Security, Safety & Policy Gatekeeper."""
+"""Guardian Agent: Independent Security, Safety & Policy Gatekeeper."""
 from __future__ import annotations
 from typing import Dict, List, Any, Optional, Tuple
 from backend.app.agents.base.agent import BaseAgent
 from backend.app.agents.base.bus import MessageBus
 from backend.app.security.manifest import PermissionManifest
-from backend.app.models.schemas import Plan, SecurityEvent
+from backend.app.models.schemas import Plan, SecurityEvent, IncidentRecord
 
 
 class GuardianAgent(BaseAgent):
     """Reviews every agent output and proposed plan. Can ALLOW, BLOCK, or ESCALATE_TO_HUMAN."""
 
-    def __init__(self, bus: MessageBus, max_unverified_fleet_share: float = 0.60):
+    def __init__(
+        self,
+        bus: MessageBus,
+        max_unverified_fleet_share: float = 0.60,
+        credibility_floor: float = 0.20,
+    ):
         manifest = PermissionManifest(
             allowed_tools={"validate_policy", "check_anomalies"},
             allowed_inbound={"PlanProposed", "SecurityViolation", "ApprovalSigned"},
@@ -22,8 +27,9 @@ class GuardianAgent(BaseAgent):
         }
         super().__init__(name="Guardian", role="Independent Policy & Safety Sentry", manifest=manifest, bus=bus, tools=tools)
         self.max_unverified_fleet_share = max_unverified_fleet_share
+        self.credibility_floor = credibility_floor
 
-    def validate_policy(self, plan: Plan) -> Tuple[str, str]:
+    def validate_policy(self, plan: Plan, incidents: Optional[List[IncidentRecord]] = None) -> Tuple[str, str]:
         """Verify policy constraints: double-booking, unverified fleet share, schema constraints."""
         # Rule 1: No unit double-booked
         assigned_units = [a.unit_id for a in plan.assignments]
@@ -43,6 +49,14 @@ class GuardianAgent(BaseAgent):
             if share > self.max_unverified_fleet_share:
                 return "ESCALATE_TO_HUMAN", f"{share*100:.1f}% of fleet committed to unverified incidents (cap: {self.max_unverified_fleet_share*100}%)"
 
+        # Rule 4: Credibility floor quarantine enforcement
+        if incidents:
+            inc_map = {i.id: i for i in incidents}
+            for a in plan.assignments:
+                inc = inc_map.get(a.incident_id)
+                if inc and inc.credibility_score < self.credibility_floor:
+                    return "BLOCK", f"Safety violation: Unit {a.unit_id} assigned to quarantined incident {a.incident_id} (credibility {inc.credibility_score:.4f} < floor {self.credibility_floor})"
+
         return "ALLOW", "All safety and allocation policies satisfied"
 
     def check_anomalies(self, plan: Plan) -> Tuple[str, str]:
@@ -54,9 +68,9 @@ class GuardianAgent(BaseAgent):
                 return "BLOCK", f"Anomaly: Negative cost ({a.cost}) for assignment {a.incident_id}"
         return "ALLOW", "No anomalies detected"
 
-    def review_proposed_plan(self, plan: Plan, trace_id: str = "trace-guard") -> Tuple[str, str]:
+    def review_proposed_plan(self, plan: Plan, incidents: Optional[List[IncidentRecord]] = None, trace_id: str = "trace-guard") -> Tuple[str, str]:
         """Review plan proposal and emit GuardianVerdict."""
-        verdict, reason = self.call_tool("validate_policy", plan=plan)
+        verdict, reason = self.call_tool("validate_policy", plan=plan, incidents=incidents)
         if verdict != "ALLOW":
             self._emit_verdict(verdict, reason, trace_id)
             return verdict, reason
@@ -92,10 +106,31 @@ class GuardianAgent(BaseAgent):
 
     def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Inspect state proposals and post verdicts."""
+        from backend.app.models.schemas import IncidentRecord
+        incidents_raw = list(state.get("incidents", {}).values())
+        incidents = [IncidentRecord(**i) if isinstance(i, dict) else i for i in incidents_raw]
+
+        # Audit incidents below credibility floor and log security alerts
+        for inc in incidents:
+            if inc.credibility_score < self.credibility_floor:
+                sec_event = SecurityEvent(
+                    event_type="credibility_floor_quarantine",
+                    severity="HIGH",
+                    agent_name=self.name,
+                    description=f"Incident {inc.id} quarantined: credibility {inc.credibility_score:.4f} is below floor {self.credibility_floor}. Excluded from dispatch.",
+                    metadata={"incident_id": inc.id, "credibility": inc.credibility_score, "floor": self.credibility_floor}
+                )
+                self.send_message(
+                    receiver="AuditStore",
+                    message_type="SecurityAlert",
+                    payload={"event": sec_event.model_dump()},
+                    trace_id="trace-guard-floor"
+                )
+
         curr_plan_data = state.get("current_plan")
         if curr_plan_data:
             plan = Plan(**curr_plan_data)
-            verdict, reason = self.review_proposed_plan(plan)
+            verdict, reason = self.review_proposed_plan(plan, incidents=incidents)
             state["guardian_verdict"] = verdict
             state["guardian_reason"] = reason
 

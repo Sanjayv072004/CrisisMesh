@@ -1,4 +1,4 @@
-﻿"""Comprehensive Tests for Phase 1B CP-SAT Allocation Engine."""
+"""Comprehensive Tests for Phase 1B CP-SAT Allocation Engine."""
 import json
 from pathlib import Path
 import pytest
@@ -153,6 +153,74 @@ def test_unverified_incident_gets_provisional_assignment_only():
     assert unverified_assignment.requires_human_confirmation is True
 
 
+def test_low_churn_tradeoff_lambda_proves_switch_vs_preserve():
+    """A10: Prove that lambda=0 redirects en-route unit, while lambda=60 preserves it."""
+    scenario = load_scenario()
+    impact = ImpactEngine(force_synthetic=True)
+
+    # 1. T0 baseline solve
+    units_t0 = [Unit(**u) for u in scenario["units"]]
+    inc_t0 = [IncidentRecord(**i) for i in scenario["t0_incidents"]]
+    matrix_t0 = impact.travel_time_matrix(units_t0, inc_t0)
+    solver_t0 = AllocationEngine(AllocationConfig(lambda_switch=60.0))
+    plan_t0 = solver_t0.solve(inc_t0, units_t0, matrix_t0)
+
+    # Verify rescue_01 is assigned to inc_t0_02 at T0
+    assert any(a.unit_id == "rescue_01" and a.incident_id == "inc_t0_02" for a in plan_t0.assignments)
+
+    # 2. T+10 state setup: amb_02 unavailable, rescue_01 en-route to inc_t0_02, rescue_02 idle
+    units_t10 = [Unit(**u) for u in scenario["units"]]
+    for u in units_t10:
+        if u.id == "amb_02":
+            u.status = UnitStatus.UNAVAILABLE
+        elif u.id == "rescue_01":
+            u.status = UnitStatus.EN_ROUTE
+            u.current_target_id = "inc_t0_02"
+        elif u.id == "amb_01":
+            u.status = UnitStatus.EN_ROUTE
+            u.current_target_id = "inc_t0_03"
+
+    t10_incident = IncidentRecord(**scenario["t10_change_events"][0]["incident"])
+    inc_t10 = [IncidentRecord(**i) for i in scenario["t0_incidents"]] + [t10_incident]
+    matrix_t10 = impact.travel_time_matrix(units_t10, inc_t10)
+
+    # 3. Naive solve (lambda = 0.0, is_naive_baseline=True)
+    solver_naive = AllocationEngine(AllocationConfig(lambda_switch=0.0, is_naive_baseline=True))
+    plan_naive = solver_naive.solve(inc_t10, units_t10, matrix_t10, previous_plan=plan_t0)
+    diff_naive = solver_naive.diff_plans(plan_t0, plan_naive)
+
+    # 4. Low-churn solve (lambda = 60.0)
+    solver_low_churn = AllocationEngine(AllocationConfig(lambda_switch=60.0, is_naive_baseline=False))
+    plan_low_churn = solver_low_churn.solve(inc_t10, units_t10, matrix_t10, previous_plan=plan_t0)
+    diff_low_churn = solver_low_churn.diff_plans(plan_t0, plan_low_churn)
+
+    # Assertions:
+    # Under lambda=0 (naive), rescue_01 is REDIRECTED to the underpass incident
+    naive_rescue_01_assignment = next(a for a in plan_naive.assignments if a.unit_id == "rescue_01")
+    assert naive_rescue_01_assignment.incident_id == "inc_t10_critical_underpass", "Naive solver should redirect en-route rescue_01"
+
+    # Under lambda=60, rescue_01 is PRESERVED at inc_t0_02, and idle rescue_02 is dispatched to underpass
+    low_churn_r1 = next(a for a in plan_low_churn.assignments if a.unit_id == "rescue_01")
+    low_churn_r2 = next(a for a in plan_low_churn.assignments if a.unit_id == "rescue_02")
+    assert low_churn_r1.incident_id == "inc_t0_02", "Low-churn solver must preserve en-route rescue_01 at inc_t0_02"
+    assert low_churn_r2.incident_id == "inc_t10_critical_underpass", "Low-churn solver must assign idle rescue_02 to underpass"
+
+    # Compare cost breakdowns
+    print("\n" + "="*70)
+    print("      A10: NAIVE (lambda=0) VS LOW-CHURN (lambda=60) SIDE BY SIDE")
+    print("="*70)
+    print(f"{'Metric':<25} | {'Naive (lambda=0)':<20} | {'Low-Churn (lambda=60)':<20}")
+    print("-" * 70)
+    print(f"{'rescue_01 Target':<25} | {naive_rescue_01_assignment.incident_id:<20} | {low_churn_r1.incident_id:<20}")
+    print(f"{'rescue_02 Target':<25} | {next((a.incident_id for a in plan_naive.assignments if a.unit_id == 'rescue_02'), 'unassigned'):<20} | {low_churn_r2.incident_id:<20}")
+    print(f"{'Total Cost':<25} | {plan_naive.cost_breakdown.total_cost:<20.2f} | {plan_low_churn.cost_breakdown.total_cost:<20.2f}")
+    print(f"{'Delay Harm Cost':<25} | {plan_naive.cost_breakdown.delay_harm_cost:<20.2f} | {plan_low_churn.cost_breakdown.delay_harm_cost:<20.2f}")
+    print(f"{'Switching Penalty':<25} | {plan_naive.cost_breakdown.switching_penalty_cost:<20.2f} | {plan_low_churn.cost_breakdown.switching_penalty_cost:<20.2f}")
+    print(f"{'Units Redirected':<25} | {diff_naive.units_redirected:<20} | {diff_low_churn.units_redirected:<20}")
+    print("="*70 + "\n")
+
+
+
 def test_demand_greater_than_supply_lists_unserved_incidents():
     """Test 5: When demand exceeds fleet capacity, solver lists unserved incidents."""
     impact = ImpactEngine(force_synthetic=True)
@@ -181,7 +249,7 @@ def test_demand_greater_than_supply_lists_unserved_incidents():
 def test_robust_plan_worst_case_cost_le_naive_plan():
     """Test 6: Uncertainty-aware robust plan expected cost <= naive baseline cost under ambiguity."""
     impact = ImpactEngine(force_synthetic=True)
-    
+
     # 1 ambulance, 1 confirmed critical incident, 1 unverified low-credibility incident
     units = [
         Unit(id="amb_1", name="Amb 1", unit_type=UnitType.AMBULANCE, status=UnitStatus.IDLE, lat=12.9176, lon=77.6238)

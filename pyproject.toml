@@ -1,0 +1,17 @@
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # Line too long
+    "E402",  # Module level import not at top of file (used in tests for isolation)
+    "F401",  # Unused imports (often exported in __init__ or used in fixture setup)
+    "F841",  # Unused local variables in test assertions
+]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"

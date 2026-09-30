@@ -20,6 +20,7 @@ import {
 export function TopBar() {
   const {
     status,
+    scenarioClock,
     activeRole,
     setActiveRole,
     connectionStatus,
@@ -41,11 +42,10 @@ export function TopBar() {
     return () => clearInterval(interval);
   }, []);
 
-  // Role switch handler
+  // Role switch handler using backend demo login endpoint
   const handleRoleChange = async (newRole: Role) => {
     try {
-      const pass = newRole === "viewer" ? "viewer123" : newRole === "operator" ? "operator123" : "commander123";
-      const res = await api.login(newRole, pass);
+      const res = await api.demoLogin(newRole);
       setActiveRole(newRole);
       wsClient.connect(res.access_token);
     } catch (e) {
@@ -102,11 +102,11 @@ export function TopBar() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-sm tracking-wider uppercase text-ops-text font-mono">
+              <span className="font-bold text-sm tracking-wider uppercase text-ops-text font-mono shrink-0">
                 CRISISMESH
               </span>
-              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-blue-950 text-ops-cyan border border-blue-800">
-                Ops Centre
+              <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-blue-950/80 text-ops-cyan border border-blue-800 shrink-0 whitespace-nowrap leading-none font-bold">
+                OPS CENTRE
               </span>
             </div>
             <div className="text-[10px] text-ops-muted font-mono">Bengaluru Flood Command</div>
@@ -165,11 +165,18 @@ export function TopBar() {
       </div>
 
       {/* Telemetry, Security & Role */}
-      <div className="flex items-center gap-4">
-        {/* Clock */}
-        <div className="flex items-center gap-1.5 text-xs font-mono text-ops-muted">
-          <Clock className="w-3.5 h-3.5 text-ops-cyan" />
-          <span>{timeStr || "00:00:00"} IST</span>
+      <div className="flex items-center gap-3">
+        {/* Clock Group: Wall Clock (IST) & Scenario Clock (SIM) */}
+        <div className="flex items-center gap-2 px-2.5 py-1 rounded bg-ops-bg border border-ops-border font-mono text-xs shadow-inner">
+          <div className="flex items-center gap-1.5 text-slate-300" title="Local Wall Clock (IST)">
+            <Clock className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-[11px] font-semibold tracking-wide">{timeStr || "00:00:00"} IST</span>
+          </div>
+          <div className="h-3 w-px bg-ops-border" />
+          <div className="flex items-center gap-1.5 text-ops-cyan font-bold" title="Scenario Simulation Clock (from scenario_status)">
+            <span className="text-[10px] text-ops-muted uppercase tracking-wider font-medium">SIM:</span>
+            <span className="tracking-wider">{scenarioClock}</span>
+          </div>
         </div>
 
         {/* Audit Status */}

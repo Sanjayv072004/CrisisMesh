@@ -41,6 +41,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/demo-login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Demo Login
+         * @description One-click demo login without credentials. Enabled ONLY when CRISISMESH_DEMO_MODE=true.
+         */
+        post: operations["demo_login_auth_demo_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/me": {
         parameters: {
             query?: never;
@@ -401,10 +421,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/analysis/usp-proof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usp Proof
+         * @description Compute live, non-hardcoded comparative benchmarks demonstrating CrisisMesh's core algorithmic USPs:
+         *     1. Low-Churn Re-planning: Proves lambda=60 preserves en-route units vs naive (lambda=0) chaotic churn.
+         *     2. Uncertainty-Aware Optimization: Evaluates dual-scenario bounds (Report True vs Report False),
+         *        proving robust worst-case cost <= naive worst-case cost.
+         *     3. Counterfactual Explanation: Provides exact runner-up options and cost deltas for assigned resources.
+         */
+        get: operations["get_usp_proof_analysis_usp_proof_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Assignment
+         * @description Assignment of an emergency unit to a specific incident.
+         */
+        Assignment: {
+            /**
+             * Unit Id
+             * @description Assigned unit ID
+             */
+            unit_id: string;
+            /**
+             * Incident Id
+             * @description Target incident ID
+             */
+            incident_id: string;
+            /**
+             * Eta Minutes
+             * @description Estimated arrival time in minutes
+             */
+            eta_minutes: number;
+            /**
+             * Is Provisional
+             * @description Flag for provisional assignments on unverified incidents
+             * @default false
+             */
+            is_provisional: boolean;
+            /**
+             * Requires Human Confirmation
+             * @description Human confirmation requirement
+             * @default false
+             */
+            requires_human_confirmation: boolean;
+            /**
+             * Target Hospital Id
+             * @description Assigned destination hospital
+             */
+            target_hospital_id?: string | null;
+            /**
+             * Cost
+             * @description Computed assignment cost
+             * @default 0
+             */
+            cost: number;
+        };
         /** AttackRequest */
         AttackRequest: {
             /** Payload */
@@ -422,6 +510,39 @@ export interface components {
             detail: string;
             /** Security Event */
             security_event?: Record<string, never> | null;
+        };
+        /**
+         * ChangeKind
+         * @description Classification of plan allocation modifications.
+         * @enum {string}
+         */
+        ChangeKind: "forced_unit_loss" | "optimization_redirect" | "new_assignment";
+        /** CounterfactualExplanation */
+        CounterfactualExplanation: {
+            /** Incident Id */
+            incident_id: string;
+            /** Incident Title */
+            incident_title: string;
+            /** Assigned Unit Id */
+            assigned_unit_id: string;
+            /** Assigned Unit Type */
+            assigned_unit_type: string;
+            /** Assigned Eta Minutes */
+            assigned_eta_minutes: number;
+            /** Assigned Cost */
+            assigned_cost: number;
+            /** Runner Up Unit Id */
+            runner_up_unit_id: string;
+            /** Runner Up Eta Minutes */
+            runner_up_eta_minutes: number;
+            /** Runner Up Cost */
+            runner_up_cost: number;
+            /** Delta Eta Minutes */
+            delta_eta_minutes: number;
+            /** Delta Cost */
+            delta_cost: number;
+            /** Rationale */
+            rationale: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -449,6 +570,54 @@ export interface components {
             password: string;
             role?: components["schemas"]["Role"] | null;
         };
+        /** LowChurnProofComparison */
+        LowChurnProofComparison: {
+            /** Naive Units Redirected */
+            naive_units_redirected: number;
+            /** Low Churn Units Redirected */
+            low_churn_units_redirected: number;
+            /** Naive Total Cost */
+            naive_total_cost: number;
+            /** Low Churn Total Cost */
+            low_churn_total_cost: number;
+            /** Naive Delay Cost */
+            naive_delay_cost: number;
+            /** Low Churn Delay Cost */
+            low_churn_delay_cost: number;
+            /** Naive Switching Cost */
+            naive_switching_cost: number;
+            /** Low Churn Switching Cost */
+            low_churn_switching_cost: number;
+            /** Explanation */
+            explanation: string;
+        };
+        /**
+         * Plan
+         * @description Complete allocation plan produced by Resource Agent.
+         */
+        Plan: {
+            /** Plan Id */
+            plan_id?: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Assignments */
+            assignments?: components["schemas"]["Assignment"][];
+            /** Unserved Incidents */
+            unserved_incidents?: string[];
+            cost_breakdown: components["schemas"]["PlanCost"];
+            /** Runner Up Per Incident */
+            runner_up_per_incident?: {
+                [key: string]: components["schemas"]["RunnerUp"];
+            };
+            /**
+             * Status
+             * @default PROPOSED
+             */
+            status: string;
+        };
         /** PlanApproveRequest */
         PlanApproveRequest: {
             /** Plan Hash */
@@ -464,6 +633,86 @@ export interface components {
              * @default false
              */
             auto_sign: boolean;
+        };
+        /**
+         * PlanChange
+         * @description Detailed change for a unit in a PlanDiff.
+         */
+        PlanChange: {
+            /** Unit Id */
+            unit_id: string;
+            /** From Incident Id */
+            from_incident_id?: string | null;
+            /** To Incident Id */
+            to_incident_id?: string | null;
+            /** Reason */
+            reason: string;
+            /** Cost Delta */
+            cost_delta: number;
+            /** @default optimization_redirect */
+            change_kind: components["schemas"]["ChangeKind"];
+            /** Eta Before */
+            eta_before?: number | null;
+            /** Eta After */
+            eta_after?: number | null;
+            /**
+             * Requires Human Decision
+             * @default false
+             */
+            requires_human_decision: boolean;
+        };
+        /**
+         * PlanCost
+         * @description Granular cost breakdown of the CP-SAT allocation objective.
+         */
+        PlanCost: {
+            /** Total Cost */
+            total_cost: number;
+            /** Delay Harm Cost */
+            delay_harm_cost: number;
+            /** Wasted Dispatch Cost */
+            wasted_dispatch_cost: number;
+            /** Switching Penalty Cost */
+            switching_penalty_cost: number;
+            /** Unserved Penalty Cost */
+            unserved_penalty_cost: number;
+        };
+        /**
+         * PlanDiff
+         * @description Delta comparison between previous approved plan and newly generated plan.
+         */
+        PlanDiff: {
+            /** Old Plan Id */
+            old_plan_id?: string | null;
+            /** New Plan Id */
+            new_plan_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Changes */
+            changes?: components["schemas"]["PlanChange"][];
+            /**
+             * Total Cost Delta
+             * @default 0
+             */
+            total_cost_delta: number;
+            /**
+             * Units Redirected
+             * @default 0
+             */
+            units_redirected: number;
+            /**
+             * Requires Human Decision
+             * @default false
+             */
+            requires_human_decision: boolean;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
         };
         /** PlanRejectRequest */
         PlanRejectRequest: {
@@ -522,6 +771,31 @@ export interface components {
          * @enum {string}
          */
         Role: "viewer" | "operator" | "commander";
+        /**
+         * RunnerUp
+         * @description Runner-up unit candidate for counterfactual explanations.
+         */
+        RunnerUp: {
+            /** Incident Id */
+            incident_id: string;
+            /** Unit Id */
+            unit_id?: string | null;
+            /**
+             * Delta Eta Minutes
+             * @default 0
+             */
+            delta_eta_minutes: number;
+            /**
+             * Delta Cost
+             * @default 0
+             */
+            delta_cost: number;
+            /**
+             * Reason Not Chosen
+             * @default
+             */
+            reason_not_chosen: string;
+        };
         /** SensorIngestRequest */
         SensorIngestRequest: {
             /** Sensor Id */
@@ -565,12 +839,9 @@ export interface components {
             verification_labels?: Record<string, never>;
             /** Impact Report */
             impact_report?: Record<string, never> | null;
-            /** Current Plan */
-            current_plan?: Record<string, never> | null;
-            /** Previous Approved Plan */
-            previous_approved_plan?: Record<string, never> | null;
-            /** Plan Diff */
-            plan_diff?: Record<string, never> | null;
+            current_plan?: components["schemas"]["Plan"] | null;
+            previous_approved_plan?: components["schemas"]["Plan"] | null;
+            plan_diff?: components["schemas"]["PlanDiff"] | null;
             /** Commander Briefing */
             commander_briefing?: Record<string, never> | null;
             /** Pending Approvals */
@@ -619,6 +890,43 @@ export interface components {
              * @default 86400
              */
             expires_in_seconds: number;
+        };
+        /** USPProofResponse */
+        USPProofResponse: {
+            /** Timestamp */
+            timestamp: number;
+            /** Scenario Stage */
+            scenario_stage: string;
+            low_churn: components["schemas"]["LowChurnProofComparison"];
+            uncertainty_aware: components["schemas"]["UncertaintyProofComparison"];
+            counterfactual: components["schemas"]["CounterfactualExplanation"];
+        };
+        /** UncertaintyProofComparison */
+        UncertaintyProofComparison: {
+            /** Incident Id */
+            incident_id: string;
+            /** Incident Title */
+            incident_title: string;
+            /** Credibility Score */
+            credibility_score: number;
+            /** Verification Label */
+            verification_label: string;
+            /** Cost If True Naive */
+            cost_if_true_naive: number;
+            /** Cost If True Robust */
+            cost_if_true_robust: number;
+            /** Cost If False Naive */
+            cost_if_false_naive: number;
+            /** Cost If False Robust */
+            cost_if_false_robust: number;
+            /** Worst Case Naive */
+            worst_case_naive: number;
+            /** Worst Case Robust */
+            worst_case_robust: number;
+            /** Is Robust Le Naive */
+            is_robust_le_naive: boolean;
+            /** Explanation */
+            explanation: string;
         };
         /** UnitStatusUpdateRequest */
         UnitStatusUpdateRequest: {
@@ -680,6 +988,38 @@ export interface operations {
                 "application/json": components["schemas"]["LoginRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    demo_login_auth_demo_login_post: {
+        parameters: {
+            query?: {
+                /** @description Role to assume: viewer, operator, commander */
+                role?: components["schemas"]["Role"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -920,7 +1260,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["Plan"];
                 };
             };
             /** @description Validation Error */
@@ -951,7 +1291,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PlanDiff"];
                 };
             };
             /** @description Validation Error */
@@ -1289,6 +1629,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_usp_proof_analysis_usp_proof_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["USPProofResponse"];
                 };
             };
         };

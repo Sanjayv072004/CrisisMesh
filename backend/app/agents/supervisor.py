@@ -1,6 +1,6 @@
 """Supervisor Agent: Event Router, Selective Re-Planner & Negotiation Budget Manager."""
 from __future__ import annotations
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from backend.app.agents.base.agent import BaseAgent
 from backend.app.agents.base.bus import MessageBus
 from backend.app.security.manifest import PermissionManifest
@@ -68,6 +68,14 @@ class SupervisorAgent(BaseAgent):
         target_agents = self.call_tool("route_event", event_type=event_type)
         state["active_agents"] = list(set(state.get("active_agents", [])) | {self.name})
         state["scheduled_agents"] = target_agents
+
+        first_agent = target_agents[0] if target_agents else "Situation"
+        self.send_message(
+            receiver=first_agent,
+            message_type="AgentTrigger",
+            payload={"event_type": event_type, "scheduled_agents": target_agents},
+            trace_id="trace-sup"
+        )
         return state
 
 

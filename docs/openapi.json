@@ -69,6 +69,51 @@
         }
       }
     },
+    "/auth/demo-login": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Demo Login",
+        "description": "One-click demo login without credentials. Enabled ONLY when CRISISMESH_DEMO_MODE=true.",
+        "operationId": "demo_login_auth_demo_login_post",
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Role",
+              "description": "Role to assume: viewer, operator, commander",
+              "default": "viewer"
+            },
+            "description": "Role to assume: viewer, operator, commander"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/me": {
       "get": {
         "tags": [
@@ -453,7 +498,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
               }
             }
           },
@@ -506,7 +553,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDiff"
+                }
               }
             }
           },
@@ -1117,10 +1166,92 @@
           }
         }
       }
+    },
+    "/analysis/usp-proof": {
+      "get": {
+        "tags": [
+          "Analysis & USP Proof"
+        ],
+        "summary": "Get Usp Proof",
+        "description": "Compute live, non-hardcoded comparative benchmarks demonstrating CrisisMesh's core algorithmic USPs:\n1. Low-Churn Re-planning: Proves lambda=60 preserves en-route units vs naive (lambda=0) chaotic churn.\n2. Uncertainty-Aware Optimization: Evaluates dual-scenario bounds (Report True vs Report False),\n   proving robust worst-case cost <= naive worst-case cost.\n3. Counterfactual Explanation: Provides exact runner-up options and cost deltas for assigned resources.",
+        "operationId": "get_usp_proof_analysis_usp_proof_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/USPProofResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "Assignment": {
+        "properties": {
+          "unit_id": {
+            "type": "string",
+            "title": "Unit Id",
+            "description": "Assigned unit ID"
+          },
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id",
+            "description": "Target incident ID"
+          },
+          "eta_minutes": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Eta Minutes",
+            "description": "Estimated arrival time in minutes"
+          },
+          "is_provisional": {
+            "type": "boolean",
+            "title": "Is Provisional",
+            "description": "Flag for provisional assignments on unverified incidents",
+            "default": false
+          },
+          "requires_human_confirmation": {
+            "type": "boolean",
+            "title": "Requires Human Confirmation",
+            "description": "Human confirmation requirement",
+            "default": false
+          },
+          "target_hospital_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Hospital Id",
+            "description": "Assigned destination hospital"
+          },
+          "cost": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Cost",
+            "description": "Computed assignment cost",
+            "default": 0.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "unit_id",
+          "incident_id",
+          "eta_minutes"
+        ],
+        "title": "Assignment",
+        "description": "Assignment of an emergency unit to a specific incident."
+      },
       "AttackRequest": {
         "properties": {
           "payload": {
@@ -1176,6 +1307,84 @@
           "detail"
         ],
         "title": "AttackResponse"
+      },
+      "ChangeKind": {
+        "type": "string",
+        "enum": [
+          "forced_unit_loss",
+          "optimization_redirect",
+          "new_assignment"
+        ],
+        "title": "ChangeKind",
+        "description": "Classification of plan allocation modifications."
+      },
+      "CounterfactualExplanation": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "incident_title": {
+            "type": "string",
+            "title": "Incident Title"
+          },
+          "assigned_unit_id": {
+            "type": "string",
+            "title": "Assigned Unit Id"
+          },
+          "assigned_unit_type": {
+            "type": "string",
+            "title": "Assigned Unit Type"
+          },
+          "assigned_eta_minutes": {
+            "type": "number",
+            "title": "Assigned Eta Minutes"
+          },
+          "assigned_cost": {
+            "type": "number",
+            "title": "Assigned Cost"
+          },
+          "runner_up_unit_id": {
+            "type": "string",
+            "title": "Runner Up Unit Id"
+          },
+          "runner_up_eta_minutes": {
+            "type": "number",
+            "title": "Runner Up Eta Minutes"
+          },
+          "runner_up_cost": {
+            "type": "number",
+            "title": "Runner Up Cost"
+          },
+          "delta_eta_minutes": {
+            "type": "number",
+            "title": "Delta Eta Minutes"
+          },
+          "delta_cost": {
+            "type": "number",
+            "title": "Delta Cost"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "incident_title",
+          "assigned_unit_id",
+          "assigned_unit_type",
+          "assigned_eta_minutes",
+          "assigned_cost",
+          "runner_up_unit_id",
+          "runner_up_eta_minutes",
+          "runner_up_cost",
+          "delta_eta_minutes",
+          "delta_cost",
+          "rationale"
+        ],
+        "title": "CounterfactualExplanation"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1251,6 +1460,108 @@
         ],
         "title": "LoginRequest"
       },
+      "LowChurnProofComparison": {
+        "properties": {
+          "naive_units_redirected": {
+            "type": "integer",
+            "title": "Naive Units Redirected"
+          },
+          "low_churn_units_redirected": {
+            "type": "integer",
+            "title": "Low Churn Units Redirected"
+          },
+          "naive_total_cost": {
+            "type": "number",
+            "title": "Naive Total Cost"
+          },
+          "low_churn_total_cost": {
+            "type": "number",
+            "title": "Low Churn Total Cost"
+          },
+          "naive_delay_cost": {
+            "type": "number",
+            "title": "Naive Delay Cost"
+          },
+          "low_churn_delay_cost": {
+            "type": "number",
+            "title": "Low Churn Delay Cost"
+          },
+          "naive_switching_cost": {
+            "type": "number",
+            "title": "Naive Switching Cost"
+          },
+          "low_churn_switching_cost": {
+            "type": "number",
+            "title": "Low Churn Switching Cost"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "naive_units_redirected",
+          "low_churn_units_redirected",
+          "naive_total_cost",
+          "low_churn_total_cost",
+          "naive_delay_cost",
+          "low_churn_delay_cost",
+          "naive_switching_cost",
+          "low_churn_switching_cost",
+          "explanation"
+        ],
+        "title": "LowChurnProofComparison"
+      },
+      "Plan": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/Assignment"
+            },
+            "type": "array",
+            "title": "Assignments"
+          },
+          "unserved_incidents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unserved Incidents"
+          },
+          "cost_breakdown": {
+            "$ref": "#/components/schemas/PlanCost"
+          },
+          "runner_up_per_incident": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RunnerUp"
+            },
+            "type": "object",
+            "title": "Runner Up Per Incident"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "PROPOSED"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cost_breakdown"
+        ],
+        "title": "Plan",
+        "description": "Complete allocation plan produced by Resource Agent."
+      },
       "PlanApproveRequest": {
         "properties": {
           "plan_hash": {
@@ -1305,6 +1616,182 @@
         },
         "type": "object",
         "title": "PlanApproveRequest"
+      },
+      "PlanChange": {
+        "properties": {
+          "unit_id": {
+            "type": "string",
+            "title": "Unit Id"
+          },
+          "from_incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Incident Id"
+          },
+          "to_incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Incident Id"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "cost_delta": {
+            "type": "number",
+            "title": "Cost Delta"
+          },
+          "change_kind": {
+            "$ref": "#/components/schemas/ChangeKind",
+            "default": "optimization_redirect"
+          },
+          "eta_before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Before"
+          },
+          "eta_after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta After"
+          },
+          "requires_human_decision": {
+            "type": "boolean",
+            "title": "Requires Human Decision",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "unit_id",
+          "reason",
+          "cost_delta"
+        ],
+        "title": "PlanChange",
+        "description": "Detailed change for a unit in a PlanDiff."
+      },
+      "PlanCost": {
+        "properties": {
+          "total_cost": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Total Cost"
+          },
+          "delay_harm_cost": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Delay Harm Cost"
+          },
+          "wasted_dispatch_cost": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Wasted Dispatch Cost"
+          },
+          "switching_penalty_cost": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Switching Penalty Cost"
+          },
+          "unserved_penalty_cost": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Unserved Penalty Cost"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total_cost",
+          "delay_harm_cost",
+          "wasted_dispatch_cost",
+          "switching_penalty_cost",
+          "unserved_penalty_cost"
+        ],
+        "title": "PlanCost",
+        "description": "Granular cost breakdown of the CP-SAT allocation objective."
+      },
+      "PlanDiff": {
+        "properties": {
+          "old_plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Plan Id"
+          },
+          "new_plan_id": {
+            "type": "string",
+            "title": "New Plan Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/PlanChange"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "total_cost_delta": {
+            "type": "number",
+            "title": "Total Cost Delta",
+            "default": 0.0
+          },
+          "units_redirected": {
+            "type": "integer",
+            "title": "Units Redirected",
+            "default": 0
+          },
+          "requires_human_decision": {
+            "type": "boolean",
+            "title": "Requires Human Decision",
+            "default": false
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "new_plan_id"
+        ],
+        "title": "PlanDiff",
+        "description": "Delta comparison between previous approved plan and newly generated plan."
       },
       "PlanRejectRequest": {
         "properties": {
@@ -1494,6 +1981,47 @@
         ],
         "title": "Role"
       },
+      "RunnerUp": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "delta_eta_minutes": {
+            "type": "number",
+            "title": "Delta Eta Minutes",
+            "default": 0.0
+          },
+          "delta_cost": {
+            "type": "number",
+            "title": "Delta Cost",
+            "default": 0.0
+          },
+          "reason_not_chosen": {
+            "type": "string",
+            "title": "Reason Not Chosen",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "incident_id"
+        ],
+        "title": "RunnerUp",
+        "description": "Runner-up unit candidate for counterfactual explanations."
+      },
       "SensorIngestRequest": {
         "properties": {
           "sensor_id": {
@@ -1580,35 +2108,32 @@
           "current_plan": {
             "anyOf": [
               {
-                "type": "object"
+                "$ref": "#/components/schemas/Plan"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Current Plan"
+            ]
           },
           "previous_approved_plan": {
             "anyOf": [
               {
-                "type": "object"
+                "$ref": "#/components/schemas/Plan"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Previous Approved Plan"
+            ]
           },
           "plan_diff": {
             "anyOf": [
               {
-                "type": "object"
+                "$ref": "#/components/schemas/PlanDiff"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Plan Diff"
+            ]
           },
           "commander_briefing": {
             "anyOf": [
@@ -1723,6 +2248,104 @@
           "user_id"
         ],
         "title": "TokenResponse"
+      },
+      "USPProofResponse": {
+        "properties": {
+          "timestamp": {
+            "type": "number",
+            "title": "Timestamp"
+          },
+          "scenario_stage": {
+            "type": "string",
+            "title": "Scenario Stage"
+          },
+          "low_churn": {
+            "$ref": "#/components/schemas/LowChurnProofComparison"
+          },
+          "uncertainty_aware": {
+            "$ref": "#/components/schemas/UncertaintyProofComparison"
+          },
+          "counterfactual": {
+            "$ref": "#/components/schemas/CounterfactualExplanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "scenario_stage",
+          "low_churn",
+          "uncertainty_aware",
+          "counterfactual"
+        ],
+        "title": "USPProofResponse"
+      },
+      "UncertaintyProofComparison": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "incident_title": {
+            "type": "string",
+            "title": "Incident Title"
+          },
+          "credibility_score": {
+            "type": "number",
+            "title": "Credibility Score"
+          },
+          "verification_label": {
+            "type": "string",
+            "title": "Verification Label"
+          },
+          "cost_if_true_naive": {
+            "type": "number",
+            "title": "Cost If True Naive"
+          },
+          "cost_if_true_robust": {
+            "type": "number",
+            "title": "Cost If True Robust"
+          },
+          "cost_if_false_naive": {
+            "type": "number",
+            "title": "Cost If False Naive"
+          },
+          "cost_if_false_robust": {
+            "type": "number",
+            "title": "Cost If False Robust"
+          },
+          "worst_case_naive": {
+            "type": "number",
+            "title": "Worst Case Naive"
+          },
+          "worst_case_robust": {
+            "type": "number",
+            "title": "Worst Case Robust"
+          },
+          "is_robust_le_naive": {
+            "type": "boolean",
+            "title": "Is Robust Le Naive"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "incident_title",
+          "credibility_score",
+          "verification_label",
+          "cost_if_true_naive",
+          "cost_if_true_robust",
+          "cost_if_false_naive",
+          "cost_if_false_robust",
+          "worst_case_naive",
+          "worst_case_robust",
+          "is_robust_le_naive",
+          "explanation"
+        ],
+        "title": "UncertaintyProofComparison"
       },
       "UnitStatusUpdateRequest": {
         "properties": {

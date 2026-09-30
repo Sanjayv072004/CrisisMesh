@@ -4,9 +4,15 @@ from typing import Dict, List, Optional, Any, TypedDict
 from pydantic import BaseModel, Field
 
 
+from backend.app.models.schemas import Plan, PlanDiff
+
+
 class DisasterState(TypedDict, total=False):
     """Shared typed state model for LangGraph workflow execution."""
     incidents: Dict[str, Any]
+    raw_reports: Dict[str, Any]
+    sensors: List[Dict[str, Any]]
+    source_registry: Dict[str, float]
     units: List[Dict[str, Any]]
     hospitals: List[Dict[str, Any]]
     verification_labels: Dict[str, Any]
@@ -40,9 +46,9 @@ class StateSnapshot(BaseModel):
     hospitals: List[Dict[str, Any]] = Field(default_factory=list)
     verification_labels: Dict[str, Any] = Field(default_factory=dict)
     impact_report: Optional[Dict[str, Any]] = None
-    current_plan: Optional[Dict[str, Any]] = None
-    previous_approved_plan: Optional[Dict[str, Any]] = None
-    plan_diff: Optional[Dict[str, Any]] = None
+    current_plan: Optional[Plan] = None
+    previous_approved_plan: Optional[Plan] = None
+    plan_diff: Optional[PlanDiff] = None
     commander_briefing: Optional[Dict[str, Any]] = None
     pending_approvals: List[Dict[str, Any]] = Field(default_factory=list)
     message_log: List[Dict[str, Any]] = Field(default_factory=list)

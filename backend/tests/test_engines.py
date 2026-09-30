@@ -10,7 +10,7 @@ from backend.app.engines.mock_data import get_mock_hospitals, get_mock_fleet, ge
 def test_road_graph_routing_and_blocking():
     """Verify shortest path routing, area blockage, and rerouting."""
     engine = RoadGraphEngine()
-    
+
     # Silk Board to Bellandur EcoSpace
     eta_open, path_open = engine.compute_travel_time_minutes(12.9176, 77.6238, 12.9260, 77.6762)
     assert eta_open < float("inf")

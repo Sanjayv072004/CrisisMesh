@@ -11,8 +11,45 @@ from backend.app.security.crypto import ApprovalGate, CommanderKeyManager
 from backend.app.security.rbac import RBACManager, UserToken, Role
 from backend.app.audit.chain import AuditChain
 from backend.app.models.schemas import SecurityEvent
+from backend.app.models.message import Message
 
 router = APIRouter(prefix="/attacks", tags=["Attack Demonstrations"])
+
+
+def _publish_attack_event(
+    sm,
+    attack_type: str,
+    result: str,
+    mitigating_layer: str,
+    detail: str,
+    sec_evt: Optional[Dict[str, Any]] = None,
+):
+    """Publish security defense event to audit chain and WebSocket live trace."""
+    try:
+        payload_data = {
+            "attack_type": attack_type,
+            "result": result,
+            "mitigating_layer": mitigating_layer,
+            "detail": detail,
+            "event": sec_evt or {
+                "event_type": f"attack_{attack_type}_{result.lower()}",
+                "severity": "HIGH",
+                "agent_name": mitigating_layer,
+                "description": detail,
+                "timestamp": time.time(),
+            },
+        }
+        msg = Message(
+            sender=mitigating_layer.split()[0],
+            recipient="Commander",
+            type="SecurityAlert",
+            payload=payload_data,
+            trace_id=f"trace-attack-{attack_type}",
+        )
+        sm.bus.publish(msg)
+    except Exception as e:
+        print(f"[routes_attacks] Warning publishing attack event: {e}")
+
 
 
 @router.post("/{attack_type}", response_model=AttackResponse)
@@ -33,6 +70,14 @@ def trigger_attack_demonstration(attack_type: str, req: Optional[AttackRequest] 
             lon=77.623,
         )
         sec_evt = res["security_events"][0] if res["security_events"] else None
+        _publish_attack_event(
+            sm,
+            attack_type,
+            "QUARANTINED",
+            "IngestionGateway (HeuristicInjectionDetector)",
+            f"Report tagged as adversarial with confidence {res.get('confidence', 0.05)}. Instruction override detected.",
+            sec_evt,
+        )
         return AttackResponse(
             attack_type=attack_type,
             result="QUARANTINED",
@@ -57,6 +102,14 @@ def trigger_attack_demonstration(attack_type: str, req: Optional[AttackRequest] 
                 if r.get("security_events"):
                     events.extend(r["security_events"])
 
+        _publish_attack_event(
+            sm,
+            attack_type,
+            "BLOCKED",
+            "TokenBucketRateLimiter (Per-IP & Per-Source)",
+            f"{rejected} of 30 burst requests blocked under token bucket capacity limits.",
+            events[0] if events else None,
+        )
         return AttackResponse(
             attack_type=attack_type,
             result="BLOCKED",
@@ -77,6 +130,14 @@ def trigger_attack_demonstration(attack_type: str, req: Optional[AttackRequest] 
             signature_hex=bad_sig,
         )
         sec_evt = sm.security_events[-1].model_dump() if sm.security_events else None
+        _publish_attack_event(
+            sm,
+            attack_type,
+            "BLOCKED",
+            "HMACAuthenticator Gate",
+            f"Perimeter HMAC verification rejected telemetry: {res.get('reason')}",
+            sec_evt,
+        )
         return AttackResponse(
             attack_type=attack_type,
             result="BLOCKED",
@@ -109,7 +170,14 @@ def trigger_attack_demonstration(attack_type: str, req: Optional[AttackRequest] 
             description=reason,
         ).model_dump()
         sm.security_events.append(SecurityEvent(**sec_evt))
-
+        _publish_attack_event(
+            sm,
+            attack_type,
+            "BLOCKED",
+            "ApprovalGate (Ed25519 Asymmetric Verification)",
+            reason,
+            sec_evt,
+        )
         return AttackResponse(
             attack_type=attack_type,
             result="BLOCKED",
@@ -141,7 +209,14 @@ def trigger_attack_demonstration(attack_type: str, req: Optional[AttackRequest] 
             description=reason2,
         ).model_dump()
         sm.security_events.append(SecurityEvent(**sec_evt))
-
+        _publish_attack_event(
+            sm,
+            attack_type,
+            "BLOCKED",
+            "ApprovalGate (Nonce Replay Store)",
+            reason2,
+            sec_evt,
+        )
         return AttackResponse(
             attack_type=attack_type,
             result="BLOCKED",
@@ -166,7 +241,14 @@ def trigger_attack_demonstration(attack_type: str, req: Optional[AttackRequest] 
             description=f"Cryptographic hash chain verification failed at block {broken_idx}",
         ).model_dump()
         sm.security_events.append(SecurityEvent(**sec_evt))
-
+        _publish_attack_event(
+            sm,
+            attack_type,
+            "DETECTED",
+            "AuditChain (SHA-256 Hash Chain Integrity)",
+            f"Mathematical hash chaining proved tampering at block index {broken_idx}.",
+            sec_evt,
+        )
         return AttackResponse(
             attack_type=attack_type,
             result="DETECTED",
@@ -186,7 +268,14 @@ def trigger_attack_demonstration(attack_type: str, req: Optional[AttackRequest] 
             description=msg,
         ).model_dump()
         sm.security_events.append(SecurityEvent(**sec_evt))
-
+        _publish_attack_event(
+            sm,
+            attack_type,
+            "BLOCKED",
+            "RBACManager (Hierarchical Permission Gate)",
+            msg,
+            sec_evt,
+        )
         return AttackResponse(
             attack_type=attack_type,
             result="BLOCKED",
@@ -209,7 +298,14 @@ def trigger_attack_demonstration(attack_type: str, req: Optional[AttackRequest] 
             description="Single uncorroborated report isolated with provisional assignment requiring commander confirmation.",
         ).model_dump()
         sm.security_events.append(SecurityEvent(**sec_evt))
-
+        _publish_attack_event(
+            sm,
+            attack_type,
+            "PROVISIONAL_ISOLATED",
+            "VerificationEngine + Guardian Policy",
+            "Allocated strictly as provisional; irrevocable dispatch forbidden without physical sensor corroboration.",
+            sec_evt,
+        )
         return AttackResponse(
             attack_type=attack_type,
             result="PROVISIONAL_ISOLATED",

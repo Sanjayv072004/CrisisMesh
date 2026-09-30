@@ -2,7 +2,7 @@
 from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Any
 
 
 class InjectionDetector(ABC):

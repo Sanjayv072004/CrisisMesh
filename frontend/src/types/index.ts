@@ -10,6 +10,10 @@ export type ReportIngestRequest = components["schemas"]["ReportIngestRequest"];
 export type ReportIngestResponse = components["schemas"]["ReportIngestResponse"];
 export type SensorIngestRequest = components["schemas"]["SensorIngestRequest"];
 export type AttackResponse = components["schemas"]["AttackResponse"];
+export type USPProofResponse = components["schemas"]["USPProofResponse"];
+export type LowChurnProofComparison = components["schemas"]["LowChurnProofComparison"];
+export type UncertaintyProofComparison = components["schemas"]["UncertaintyProofComparison"];
+export type CounterfactualExplanation = components["schemas"]["CounterfactualExplanation"];
 
 export interface WSEvent {
   id: string;
@@ -43,8 +47,10 @@ export interface IncidentRecord {
 
 export interface Unit {
   id: string;
-  type: UnitType;
-  status: UnitStatus;
+  name?: string;
+  unit_type?: string;
+  type?: string;
+  status: UnitStatus | string;
   lat: number;
   lon: number;
   capacity: number;

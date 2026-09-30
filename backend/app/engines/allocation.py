@@ -1,4 +1,4 @@
-﻿"""Allocation Engine using Google OR-Tools CP-SAT.
+"""Allocation Engine using Google OR-Tools CP-SAT.
 
 Implements:
 - Hard constraints: 1 incident/unit, unavailable units excluded, unit-type matching, reachable routes.
@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Tuple, Set, Any
 from ortools.sat.python import cp_model
 from backend.app.models.schemas import (
     Unit, UnitType, UnitStatus, IncidentRecord, Hospital,
-    Assignment, RunnerUp, PlanCost, Plan, PlanChange, PlanDiff, VerificationLabel
+    Assignment, RunnerUp, PlanCost, Plan, PlanChange, PlanDiff, VerificationLabel, ChangeKind
 )
 
 
@@ -29,6 +29,7 @@ class AllocationConfig:
         unserved_penalty: float = 250.0,    # Base penalty per severity point for leaving incident unserved
         scale_factor: int = 100,            # Scaling factor for CP-SAT integer programming
         is_naive_baseline: bool = False,    # If True, ignores credibility (p=1.0) and sets lambda=0
+        credibility_floor: float = 0.20,    # Incidents below this floor receive NO assignment
     ):
         self.severity_weight = severity_weight
         self.false_alarm_cost = 0.0 if is_naive_baseline else false_alarm_cost
@@ -36,6 +37,7 @@ class AllocationConfig:
         self.unserved_penalty = unserved_penalty
         self.scale_factor = scale_factor
         self.is_naive_baseline = is_naive_baseline
+        self.credibility_floor = credibility_floor
 
 
 class AllocationEngine:
@@ -82,7 +84,13 @@ class AllocationEngine:
         total_assign_costs: Dict[Tuple[str, str], float] = {}
         unserved_costs: Dict[str, float] = {}
 
-        # 1. Unserved incident variables & costs
+        # 1. Filter assignable incidents by credibility floor
+        assignable_incidents = [
+            inc for inc in incidents
+            if self.config.is_naive_baseline or getattr(inc, "credibility_score", 0.5) >= self.config.credibility_floor
+        ]
+
+        # Unserved incident variables & costs
         for inc in incidents:
             z[inc.id] = model.NewBoolVar(f"unserved_{inc.id}")
             # In uncertainty-aware mode, expected unserved cost is p * (severity * penalty)
@@ -99,7 +107,7 @@ class AllocationEngine:
 
         # 3. Create assignment variables and cost terms
         for u in assignable_units:
-            for inc in incidents:
+            for inc in assignable_incidents:
                 # HARD CONSTRAINT: Unit type must match requirement
                 if u.unit_type != inc.required_unit_type:
                     continue
@@ -273,6 +281,10 @@ class AllocationEngine:
 
         old_map = {a.unit_id: a.incident_id for a in old_plan.assignments}
         new_map = {a.unit_id: a.incident_id for a in new_plan.assignments}
+        old_eta = {a.unit_id: a.eta_minutes for a in old_plan.assignments}
+        new_eta = {a.unit_id: a.eta_minutes for a in new_plan.assignments}
+        old_inc_eta = {a.incident_id: a.eta_minutes for a in old_plan.assignments}
+        new_inc_eta = {a.incident_id: a.eta_minutes for a in new_plan.assignments}
         all_units = sorted(list(set(old_map.keys()) | set(new_map.keys())))
 
         changes: List[PlanChange] = []
@@ -285,15 +297,28 @@ class AllocationEngine:
 
             if old_inc != new_inc:
                 if old_inc is not None and new_inc is not None:
+                    kind = ChangeKind.OPTIMIZATION_REDIRECT
                     reason = f"Unit {u_id} pulled from incident {old_inc} and redirected to {new_inc}"
                     redirected_count += 1
-                    req_human = True
+                    req_human = True  # High risk: abandoning active assignment
                 elif old_inc is None and new_inc is not None:
+                    kind = ChangeKind.NEW_ASSIGNMENT
                     reason = f"Unit {u_id} newly assigned to {new_inc}"
                     req_human = False
                 else:
-                    reason = f"Unit {u_id} assignment cancelled (returned to idle)"
-                    req_human = True
+                    kind = ChangeKind.FORCED_UNIT_LOSS
+                    # Real risk check: Did the orphaned incident get worse or unserved?
+                    replacement_eta = new_inc_eta.get(old_inc)
+                    orig_eta = old_inc_eta.get(old_inc, 0.0)
+                    if replacement_eta is None:
+                        reason = f"Unit {u_id} lost (incident {old_inc} left unserved!)"
+                        req_human = True
+                    elif replacement_eta > orig_eta:
+                        reason = f"Unit {u_id} lost: incident {old_inc} reassigned with degraded ETA ({orig_eta:.1f}m -> {replacement_eta:.1f}m)"
+                        req_human = True
+                    else:
+                        reason = f"Unit {u_id} unavailable: incident {old_inc} covered by replacement"
+                        req_human = False
 
                 changes.append(PlanChange(
                     unit_id=u_id,
@@ -301,6 +326,9 @@ class AllocationEngine:
                     to_incident_id=new_inc,
                     reason=reason,
                     cost_delta=0.0,
+                    change_kind=kind,
+                    eta_before=old_eta.get(u_id),
+                    eta_after=new_eta.get(u_id),
                     requires_human_decision=req_human
                 ))
                 if req_human:

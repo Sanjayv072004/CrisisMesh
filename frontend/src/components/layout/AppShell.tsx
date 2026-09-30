@@ -15,11 +15,17 @@ import {
   Layers,
   Cpu,
 } from "lucide-react";
+import { isDemoAutologinEnabled, getDefaultDemoRole } from "@/lib/auth-helpers";
+import { SafeModeBanner } from "../demo/SafeModeBanner";
+import { PresenterControls } from "../demo/PresenterControls";
+import { AttackPanel } from "../demo/AttackPanel";
+import { USPProofPanel } from "../demo/USPProofPanel";
 
 export function AppShell() {
   const {
     activeRole,
     setSnapshot,
+    setAuditStatus,
     incidents,
     units,
     currentPlan,
@@ -27,6 +33,15 @@ export function AppShell() {
     isOfflineMap,
     toggleOfflineMap,
     status,
+    isPlaying,
+    setIsPlaying,
+    playbackSpeed,
+    highlightedTraceId,
+    togglePresenterMode,
+    toggleAttackPanel,
+    setAttackPanelOpen,
+    toggleUSPPanel,
+    setUSPPanelOpen,
   } = useCrisisStore();
 
   const [isLoading, setIsLoading] = useState(true);
@@ -36,13 +51,23 @@ export function AppShell() {
     async function boot() {
       try {
         setIsLoading(true);
-        // 1. Authenticate default role (commander)
-        const authData = await api.login("commander", "commander123");
+        let token = api.getToken();
+
+        // 1. Authenticate default demo role only if demo auto-login is enabled and no token is in memory
+        if (!token && isDemoAutologinEnabled()) {
+          const defaultRole = getDefaultDemoRole();
+          const authData = await api.demoLogin(defaultRole);
+          token = authData.access_token;
+        }
+
         // 2. Fetch baseline state snapshot
         const snapshot = await api.getState();
         setSnapshot(snapshot);
+
         // 3. Connect real-time WebSocket client
-        wsClient.connect(authData.access_token);
+        if (token) {
+          wsClient.connect(token);
+        }
         setIsLoading(false);
       } catch (err: any) {
         console.error("Initialization error:", err);
@@ -57,10 +82,68 @@ export function AppShell() {
     };
   }, [setSnapshot]);
 
+  // Global Keyboard Shortcuts for Presenter Mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement)?.tagName)) {
+        return;
+      }
+
+      if (e.key === "p" || e.key === "P") {
+        e.preventDefault();
+        togglePresenterMode();
+      } else if (e.key === "a" || e.key === "A") {
+        e.preventDefault();
+        toggleAttackPanel();
+      } else if (e.key === "u" || e.key === "U") {
+        e.preventDefault();
+        toggleUSPPanel();
+      } else if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        const nextState = !isPlaying;
+        setIsPlaying(nextState);
+        api.playScenario(playbackSpeed);
+      } else if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        api.resetScenario().then((snap) => {
+          setSnapshot(snap);
+          api.verifyAudit().then((audit) => setAuditStatus(audit));
+        });
+      } else if (e.key === "1" || e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        api.startScenario().then((snap) => setSnapshot(snap));
+      } else if (e.key === "2" || e.key === "t" || e.key === "T") {
+        e.preventDefault();
+        api.stepScenario().then((snap) => setSnapshot(snap));
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setAttackPanelOpen(false);
+        setUSPPanelOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isPlaying,
+    playbackSpeed,
+    setSnapshot,
+    setAuditStatus,
+    setIsPlaying,
+    togglePresenterMode,
+    toggleAttackPanel,
+    setAttackPanelOpen,
+    toggleUSPPanel,
+    setUSPPanelOpen,
+  ]);
+
   const incidentList = Object.values(incidents);
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-ops-bg text-ops-text select-none">
+      {/* 0. Resilient Safe Mode Indicator Banner */}
+      <SafeModeBanner />
+
       {/* 1. Header / Top Bar */}
       <TopBar />
 
@@ -96,12 +179,15 @@ export function AppShell() {
                 incidentList.map((inc) => (
                   <div
                     key={inc.id}
-                    className="p-2.5 rounded bg-ops-bg border border-ops-border hover:border-ops-borderBright transition-all"
+                    title={inc.title}
+                    className="p-2 rounded bg-ops-bg border border-ops-border hover:border-ops-borderBright transition-all cursor-pointer"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="font-semibold text-xs text-white truncate">{inc.title}</div>
+                      <div className="font-semibold text-xs text-white truncate min-w-0 flex-1" title={inc.title}>
+                        {inc.title}
+                      </div>
                       <span
-                        className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-bold ${
+                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold shrink-0 whitespace-nowrap leading-none inline-flex items-center ${
                           inc.severity >= 4
                             ? "bg-red-950 text-ops-red border border-red-800"
                             : "bg-amber-950 text-ops-amber border border-amber-800"
@@ -111,15 +197,15 @@ export function AppShell() {
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between text-[11px] font-mono text-ops-muted mt-2">
+                    <div className="flex items-center justify-between text-[11px] font-mono text-ops-muted mt-1.5">
                       <span>Affected: {inc.people_affected}</span>
                       <span
-                        className={`px-1 rounded text-[10px] ${
+                        className={`px-1.5 py-0.2 rounded text-[10px] uppercase font-bold shrink-0 whitespace-nowrap leading-none ${
                           inc.verification_label === "CONFIRMED"
-                            ? "text-ops-emerald bg-emerald-950/60"
+                            ? "text-ops-emerald bg-emerald-950/60 border border-emerald-800/60"
                             : inc.verification_label === "CONFLICTING"
-                            ? "text-ops-red bg-red-950/60"
-                            : "text-ops-amber bg-amber-950/60"
+                            ? "text-ops-red bg-red-950/60 border border-red-800/60"
+                            : "text-ops-amber bg-amber-950/60 border border-amber-800/60"
                         }`}
                       >
                         {inc.verification_label}
@@ -131,11 +217,11 @@ export function AppShell() {
             </div>
           </div>
 
-          {/* Units Section */}
-          <div className="h-44 bg-ops-surface border border-ops-border rounded-lg flex flex-col min-h-0 overflow-hidden shadow-lg">
-            <div className="h-9 border-b border-ops-border px-3 flex items-center justify-between bg-ops-surfaceHover/50">
+          {/* Units Section (Compact for all 6 units to fit without scrolling at 1080p) */}
+          <div className="h-56 bg-ops-surface border border-ops-border rounded-lg flex flex-col min-h-0 overflow-hidden shadow-lg shrink-0">
+            <div className="h-8 border-b border-ops-border px-3 flex items-center justify-between bg-ops-surfaceHover/50">
               <div className="flex items-center gap-2">
-                <Ambulance className="w-4 h-4 text-ops-cyan" />
+                <Ambulance className="w-3.5 h-3.5 text-ops-cyan" />
                 <span className="font-mono text-xs font-semibold tracking-wider uppercase text-slate-200">
                   Fleet Units ({units.length})
                 </span>
@@ -143,23 +229,26 @@ export function AppShell() {
               <span className="text-[10px] font-mono text-ops-muted">Status</span>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+            <div className="flex-1 overflow-y-auto p-1.5 space-y-1">
               {units.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-xs font-mono text-ops-muted">
                   No fleet units loaded.
                 </div>
               ) : (
-                units.map((u) => (
-                  <div
-                    key={u.id}
-                    className="flex items-center justify-between p-1.5 px-2 rounded bg-ops-bg border border-ops-border text-xs font-mono"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-ops-cyan uppercase font-bold">{u.id}</span>
-                      <span className="text-[11px] text-slate-400 capitalize">{u.type}</span>
-                    </div>
+                units.map((u) => {
+                  const typeLabel = (u.unit_type || (u as any).type || "unit").replace("_", " ");
+                  return (
+                    <div
+                      key={u.id}
+                      title={`${u.id.toUpperCase()} (${typeLabel}) - Capacity: ${u.capacity}`}
+                      className="flex items-center justify-between py-1 px-2 rounded bg-ops-bg border border-ops-border text-xs font-mono"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-ops-cyan uppercase font-bold text-[11px] shrink-0">{u.id}</span>
+                        <span className="text-[10px] text-slate-400 capitalize truncate">{typeLabel}</span>
+                      </div>
                     <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded font-medium uppercase ${
+                      className={`text-[9px] px-1.5 py-0.5 rounded font-medium uppercase shrink-0 whitespace-nowrap leading-none ${
                         u.status === "en_route"
                           ? "bg-amber-950 text-ops-amber border border-amber-800"
                           : u.status === "unavailable"
@@ -169,8 +258,9 @@ export function AppShell() {
                     >
                       {u.status}
                     </span>
-                  </div>
-                ))
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
@@ -292,20 +382,35 @@ export function AppShell() {
                     </div>
                     {(currentPlan.assignments || []).map((a) => {
                       const eta = a.eta_minutes ?? a.estimated_eta_minutes ?? 0;
+                      const inc = incidents[a.incident_id];
+                      let locName = "";
+                      if (inc?.title) {
+                        const parts = inc.title.split(/ at | in | near /i);
+                        locName = parts.length > 1 ? parts[1].trim() : inc.title;
+                      }
                       return (
                         <div
                           key={`${a.unit_id}-${a.incident_id}`}
-                          className="flex items-center justify-between p-1.5 rounded bg-ops-bg border border-ops-border text-[11px]"
+                          className="flex items-center justify-between p-1.5 rounded bg-ops-bg border border-ops-border text-[11px] gap-1.5"
                         >
-                          <span className="text-ops-cyan font-bold">{a.unit_id}</span>
-                          <span className="text-slate-500">&rarr;</span>
-                          <span className="text-white">{a.incident_id}</span>
-                          <span className="text-ops-muted">ETA {eta.toFixed(0)}m</span>
-                          {a.is_provisional && (
-                            <span className="text-[9px] px-1 rounded bg-amber-950 text-ops-amber border border-amber-800">
-                              PROVISIONAL
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <span className="text-ops-cyan font-bold font-mono shrink-0">{a.unit_id}</span>
+                            <span className="text-slate-500 shrink-0">&rarr;</span>
+                            <div className="truncate font-mono" title={`${a.incident_id}: ${inc?.title || 'Unknown'}`}>
+                              <span className="text-slate-400 text-[10px]">{a.incident_id}</span>
+                              {locName && <span className="text-white ml-1 text-[11px] font-medium">({locName})</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {a.eta_minutes !== undefined && a.eta_minutes !== null && (
+                              <span className="text-ops-muted text-[10px]">ETA {eta.toFixed(0)}m</span>
+                            )}
+                            {a.is_provisional && (
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-amber-950 text-ops-amber border border-amber-800 leading-none font-bold">
+                                PROVISIONAL
+                              </span>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -351,7 +456,11 @@ export function AppShell() {
                 agentTrace.map((msg, idx) => (
                   <div
                     key={`${msg.timestamp}-${idx}`}
-                    className="p-1.5 rounded bg-ops-bg border border-ops-border flex flex-col gap-0.5"
+                    className={`p-1.5 rounded border flex flex-col gap-0.5 transition-colors ${
+                      highlightedTraceId && msg.trace_id?.includes(highlightedTraceId)
+                        ? "bg-rose-950/60 border-rose-500/50 ring-1 ring-rose-500/30"
+                        : "bg-ops-bg border-ops-border"
+                    }`}
                   >
                     <div className="flex items-center justify-between text-[10px]">
                       <div className="flex items-center gap-1.5 font-bold">
@@ -376,6 +485,15 @@ export function AppShell() {
           </div>
         </section>
       </main>
+
+      {/* Phase 7: Presenter Mode Controls */}
+      <PresenterControls />
+
+      {/* Phase 7: Attack Demonstration Panel */}
+      <AttackPanel />
+
+      {/* Phase 7: USP Proof Panel */}
+      <USPProofPanel />
     </div>
   );
 }

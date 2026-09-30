@@ -1,11 +1,11 @@
-﻿"""LLM Adapter supporting LIVE, MOCK, and REPLAY modes with Pydantic Schema Validation."""
+"""LLM Adapter supporting LIVE, MOCK, and REPLAY modes with Pydantic Schema Validation."""
 from __future__ import annotations
 import hashlib
 import json
 import logging
 from enum import Enum
 from pathlib import Path
-from typing import Type, TypeVar, Dict, Any, Optional, Callable
+from typing import Type, TypeVar, Dict, Any, Optional, Callable, Tuple
 from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger("CrisisMesh.LLMAdapter")
@@ -19,7 +19,7 @@ class LLMMode(str, Enum):
 
 
 class LLMAdapter:
-    """Provider-agnostic LLM adapter enforcing structured output and offline determinism."""
+    """Provider-agnostic LLM adapter enforcing structured output, offline determinism, and graceful degradation."""
 
     def __init__(
         self,
@@ -36,6 +36,10 @@ class LLMAdapter:
         self._named_canned_responses: Dict[Tuple[str, str], Any] = {}
         # Map: trace_id -> raw JSON string
         self._replay_store: Dict[str, str] = {}
+        # Graceful degradation state
+        self.is_degraded: bool = False
+        self.degraded_reason: Optional[str] = None
+        self.degradation_callbacks: list[Callable[[str, str], None]] = []
 
     def register_canned_response(
         self, agent_name: str, key_or_prompt: str, response: BaseModel | Dict[str, Any] | str
@@ -104,7 +108,10 @@ class LLMAdapter:
         for name, field in schema.model_fields.items():
             if field.is_required():
                 ann = field.annotation
-                if ann is str or ann == Optional[str]:
+                if isinstance(ann, type) and issubclass(ann, Enum):
+                    members = list(ann)
+                    res[name] = members[seed % len(members)].value if members else None
+                elif ann is str or ann == Optional[str]:
                     res[name] = f"mock_{name}_{seed % 1000}"
                 elif ann is int or ann == Optional[int]:
                     res[name] = (seed % 5) + 1
@@ -127,16 +134,37 @@ class LLMAdapter:
         raw = self._replay_store[trace_id]
         return self._validate_and_return(raw, schema)
 
+    def _trigger_degradation(self, agent_name: str, reason: str) -> None:
+        self.is_degraded = True
+        self.degraded_reason = f"{agent_name}: {reason}"
+        for cb in self.degradation_callbacks:
+            try:
+                cb(agent_name, reason)
+            except Exception as cb_err:
+                logger.error(f"Degradation callback error: {cb_err}")
+
     def _generate_live(self, agent_name: str, prompt: str, schema: Type[T]) -> T:
-        """Live LLM call with structured JSON validation and 1 automatic retry."""
+        """Live LLM call with structured JSON validation, 1 retry, and graceful mock degradation."""
         if not self.live_provider_fn:
-            raise RuntimeError("Live provider function not configured for LIVE mode")
+            logger.warning(
+                f"Live provider function not configured for LIVE mode. Gracefully degrading '{agent_name}' to MOCK."
+            )
+            self._trigger_degradation(agent_name, "Live provider function not configured")
+            return self._generate_mock(agent_name, prompt, schema)
 
         json_schema = json.dumps(schema.model_json_schema())
         enforced_prompt = f"{prompt}\n\nIMPORTANT: Respond with pure JSON conforming to schema:\n{json_schema}"
 
         # Attempt 1
-        raw_output = self.live_provider_fn(agent_name, enforced_prompt)
+        try:
+            raw_output = self.live_provider_fn(agent_name, enforced_prompt)
+        except Exception as e:
+            logger.warning(
+                f"Live provider raised {type(e).__name__} for '{agent_name}': {e}. Gracefully degrading to MOCK."
+            )
+            self._trigger_degradation(agent_name, f"Provider failure ({type(e).__name__}): {e}")
+            return self._generate_mock(agent_name, prompt, schema)
+
         try:
             return self._validate_and_return(raw_output, schema)
         except (ValidationError, json.JSONDecodeError) as e:
@@ -145,7 +173,16 @@ class LLMAdapter:
                 f"{enforced_prompt}\n\nYour previous output failed validation: {str(e)}.\n"
                 f"Fix the JSON output to strictly match schema:\n{json_schema}"
             )
-            raw_output_retry = self.live_provider_fn(agent_name, retry_prompt)
+            try:
+                raw_output_retry = self.live_provider_fn(agent_name, retry_prompt)
+            except Exception as retry_err:
+                logger.warning(
+                    f"Live provider raised {type(retry_err).__name__} during retry for '{agent_name}': {retry_err}. Gracefully degrading to MOCK."
+                )
+                self._trigger_degradation(agent_name, f"Provider failure ({type(retry_err).__name__}): {retry_err}")
+                return self._generate_mock(agent_name, prompt, schema)
+
+            # Let ValidationError raise if retry output also fails schema validation
             return self._validate_and_return(raw_output_retry, schema)
 
     def _validate_and_return(self, data: Any, schema: Type[T]) -> T:

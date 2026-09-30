@@ -145,7 +145,7 @@ def test_replay_reproduces_a_recorded_run(tmp_path):
         '{"incident_type": "flood", "severity": 5, '
         '"location_name": "Outer Ring Road Underpass", "is_life_threatening": true}'
     )
-    
+
     # Register in memory
     adapter.register_replay(trace_id, recorded_json)
     output = adapter.generate(

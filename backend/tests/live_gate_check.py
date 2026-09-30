@@ -184,7 +184,7 @@ async def main():
                 "Re-plan violated forbidden assignment constraint!"
 
         print(f"  -> Plan {plan_pre_id} rejected; re-plan created new Plan {new_plan_id}.")
-        print(f"  -> Verified constraint enforced: amb_01 not assigned to inc_t0_03.")
+        print("  -> Verified constraint enforced: amb_01 not assigned to inc_t0_03.")
         print("  [CONFIRMED] Reject flow triggers re-plan and respects commander reason.")
 
         # ---------------------------------------------------------------------

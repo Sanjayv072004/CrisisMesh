@@ -134,7 +134,7 @@ class AuditChain:
 
     def verify_chain(self) -> Tuple[bool, Optional[int]]:
         """Verify complete cryptographic chain integrity.
-        
+
         Returns:
             (True, None) if the chain is fully intact.
             (False, broken_index) where broken_index is the 0-based index of the first corrupted entry.

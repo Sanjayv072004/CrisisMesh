@@ -29,7 +29,7 @@ class BaseAgent(ABC):
 
     def call_tool(self, name: str, trace_id: str = "sys-trace", **kwargs) -> Any:
         """Execute a tool while strictly enforcing manifest permissions.
-        
+
         If the tool is not explicitly declared in `manifest.allowed_tools`,
         a security event is immediately published to the bus and a `PermissionViolation` is raised.
         """

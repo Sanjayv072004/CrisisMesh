@@ -25,8 +25,9 @@ def client():
 
 
 @pytest.fixture
-def tokens():
+def tokens(monkeypatch):
     """Generate dev tokens for viewer, operator, and commander."""
+    monkeypatch.setenv("CRISISMESH_DEMO_MODE", "true")
     v_token_model = auth_service.authenticate("viewer", "viewer123", Role.VIEWER)
     o_token_model = auth_service.authenticate("operator", "operator123", Role.OPERATOR)
     c_token_model = auth_service.authenticate("commander", "commander123", Role.COMMANDER)
@@ -60,10 +61,72 @@ def test_health_and_security_headers(client):
 
 
 # -------------------------------------------------------------------------
-# 2. Authentication & Profile Test
+# 2. Demo Mode Security & Authentication Tests (Block B Verification)
 # -------------------------------------------------------------------------
-def test_auth_login_and_profile(client):
-    """Verify login with dev credentials and /auth/me profile inspection."""
+def test_demo_mode_disabled_by_default(client, monkeypatch):
+    """Confirm demo users do NOT exist and demo endpoints are blocked when CRISISMESH_DEMO_MODE is unset."""
+    monkeypatch.delenv("CRISISMESH_DEMO_MODE", raising=False)
+
+    # Dev users dictionary must be empty in production/default mode
+    assert auth_service.dev_users == {}
+
+    # Direct authentication fails
+    assert auth_service.authenticate("viewer", "viewer123") is None
+    assert auth_service.authenticate("commander", "commander123") is None
+
+    # POST /auth/login with demo accounts fails with 401
+    resp = client.post("/auth/login", json={"username": "commander", "password": "commander123"})
+    assert resp.status_code == 401
+    err_msg = resp.json().get("error", {}).get("message") or resp.json().get("detail", "")
+    assert "require CRISISMESH_DEMO_MODE=true" in err_msg
+
+    # POST /auth/demo-login returns 403 Forbidden
+    demo_resp = client.post("/auth/demo-login?role=commander")
+    assert demo_resp.status_code == 403
+    demo_err_msg = demo_resp.json().get("error", {}).get("message") or demo_resp.json().get("detail", "")
+    assert "Demo login is disabled" in demo_err_msg
+
+
+def test_demo_mode_enabled_and_demo_login_endpoint(client, monkeypatch):
+    """Confirm demo login works and logs security audit events when CRISISMESH_DEMO_MODE=true."""
+    monkeypatch.setenv("CRISISMESH_DEMO_MODE", "true")
+
+    # Dev users exist
+    assert "commander" in auth_service.dev_users
+
+    # Demo login for viewer
+    v_resp = client.post("/auth/demo-login?role=viewer")
+    assert v_resp.status_code == 200
+    v_data = v_resp.json()
+    assert v_data["role"] == "viewer"
+    assert v_data["user_id"] == "demo_viewer"
+    assert v_data["expires_in_seconds"] == 3600
+    assert "access_token" in v_data
+
+    # Demo login for commander
+    c_resp = client.post("/auth/demo-login?role=commander")
+    assert c_resp.status_code == 200
+    c_data = c_resp.json()
+    assert c_data["role"] == "commander"
+    assert c_data["user_id"] == "demo_commander"
+    assert c_data["public_key_hex"] is not None
+
+    # Test token works with /auth/me
+    c_token = c_data["access_token"]
+    me_resp = client.get("/auth/me", headers={"Authorization": f"Bearer {c_token}"})
+    assert me_resp.status_code == 200
+    assert me_resp.json()["role"] == "commander"
+
+    # Verify security audit event was logged to state_manager
+    sec_events = [e for e in state_manager.security_events if e.event_type == "demo_login_authenticated"]
+    assert len(sec_events) >= 2
+    assert any(e.metadata.get("role") == "commander" for e in sec_events)
+
+
+def test_auth_login_and_profile(client, monkeypatch):
+    """Verify login with dev credentials (in demo mode) and /auth/me profile inspection."""
+    monkeypatch.setenv("CRISISMESH_DEMO_MODE", "true")
+
     # 1. Successful login
     login_resp = client.post(
         "/auth/login",

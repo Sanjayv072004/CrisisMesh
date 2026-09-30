@@ -128,3 +128,57 @@ class HealthResponse(BaseModel):
     mode: str
     uptime_seconds: float
     timestamp: float
+
+
+# -------------------------------------------------------------------------
+# Phase 7 USP Proof & Analysis Schemas
+# -------------------------------------------------------------------------
+class LowChurnProofComparison(BaseModel):
+    naive_units_redirected: int
+    low_churn_units_redirected: int
+    naive_total_cost: float
+    low_churn_total_cost: float
+    naive_delay_cost: float
+    low_churn_delay_cost: float
+    naive_switching_cost: float
+    low_churn_switching_cost: float
+    explanation: str
+
+
+class UncertaintyProofComparison(BaseModel):
+    incident_id: str
+    incident_title: str
+    credibility_score: float
+    verification_label: str
+    cost_if_true_naive: float
+    cost_if_true_robust: float
+    cost_if_false_naive: float
+    cost_if_false_robust: float
+    worst_case_naive: float
+    worst_case_robust: float
+    is_robust_le_naive: bool
+    explanation: str
+
+
+class CounterfactualExplanation(BaseModel):
+    incident_id: str
+    incident_title: str
+    assigned_unit_id: str
+    assigned_unit_type: str
+    assigned_eta_minutes: float
+    assigned_cost: float
+    runner_up_unit_id: str
+    runner_up_eta_minutes: float
+    runner_up_cost: float
+    delta_eta_minutes: float
+    delta_cost: float
+    rationale: str
+
+
+class USPProofResponse(BaseModel):
+    timestamp: float
+    scenario_stage: str
+    low_churn: LowChurnProofComparison
+    uncertainty_aware: UncertaintyProofComparison
+    counterfactual: CounterfactualExplanation
+

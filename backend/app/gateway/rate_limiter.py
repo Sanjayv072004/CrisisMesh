@@ -2,7 +2,7 @@
 from __future__ import annotations
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 
 class RateLimiter(ABC):

@@ -1,4 +1,4 @@
-﻿"""Domain Models for Crisis Reports, Sensors, and Verification Results."""
+"""Domain Models for Crisis Reports, Sensors, and Verification Results."""
 from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
@@ -29,6 +29,7 @@ class SensorReading(BaseModel):
     value: float
     unit: str = "meters"
     flood_threshold: float = 0.5
+    coverage_radius_m: float = 1000.0
 
 
 class ReportCluster(BaseModel):

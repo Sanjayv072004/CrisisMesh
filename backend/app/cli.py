@@ -24,11 +24,19 @@ def run_scenario(auto_approve: bool = True):
         scenario = json.load(f)
 
     bus = MessageBus()
-    orchestrator = CrisisMeshOrchestrator(bus=bus)
+    orchestrator = CrisisMeshOrchestrator(
+        bus=bus,
+        sensors=scenario.get("sensors", []),
+        source_registry=scenario.get("source_registry", {}),
+        raw_reports={r["id"]: r for r in scenario.get("raw_reports", [])}
+    )
 
     # 2. Build T0 Initial State
     initial_state = {
         "trigger_event_type": "new_report",
+        "raw_reports": {r["id"]: r for r in scenario.get("raw_reports", [])},
+        "sensors": scenario.get("sensors", []),
+        "source_registry": scenario.get("source_registry", {}),
         "incidents": {i["id"]: i for i in scenario["t0_incidents"]},
         "units": scenario["units"],
         "hospitals": scenario["hospitals"],
@@ -49,16 +57,31 @@ def run_scenario(auto_approve: bool = True):
     state = orchestrator.graph.invoke(initial_state, config=config)
 
     print(f"\n[ORCHESTRATOR STATUS]: {state.get('status')}")
+
+    # Print Verification Table
+    print("\n" + "="*70)
+    print("                 INCIDENT VERIFICATION SUMMARY (T0)")
+    print("="*70)
+    print(f"{'Incident ID':<14} | {'Severity':<8} | {'Score':<7} | {'Label':<12} | {'Status'}")
+    print("-" * 70)
+    for inc_id, inc_data in state.get("incidents", {}).items():
+        score = inc_data.get("credibility_score", 0.0)
+        lbl = inc_data.get("verification_label", "unverified")
+        sev = inc_data.get("severity", 3)
+        prov = "PROVISIONAL" if (lbl == "unverified" or score < 0.75) else "CONFIRMED"
+        print(f"{inc_id:<14} | SEV {sev:<4} | {score:<7.4f} | {lbl.upper():<12} | {prov}")
+    print("="*70)
+
     plan_data = state.get("current_plan")
     if plan_data:
         plan = Plan(**plan_data)
-        print("\n" + "-"*60)
+        print("\n" + "-"*70)
         print(f"PROPOSED T0 PLAN (ID: {plan.plan_id[:8]})")
         print(f"Total Cost: {plan.cost_breakdown.total_cost:.2f} | Delay Harm: {plan.cost_breakdown.delay_harm_cost:.2f} | Wasted Cost: {plan.cost_breakdown.wasted_dispatch_cost:.2f}")
         for a in plan.assignments:
             prov = " [PROVISIONAL]" if a.is_provisional else " [CONFIRMED]"
             print(f"  * {a.unit_id} -> {a.incident_id} (ETA: {a.eta_minutes}m){prov}")
-        print("-"*60)
+        print("-"*70)
 
     briefing = state.get("commander_briefing", {})
     if briefing:
@@ -97,18 +120,42 @@ def run_scenario(auto_approve: bool = True):
     print(">>> T+10 SCENARIO EVENT OCCURS:")
     print("    1. Critical Incident: SUV submerged in Outer Ring Road Underpass!")
     print("    2. Unit Breakdown: Ambulance 2 engine hydrostatic lock (UNAVAILABLE)")
+    print("    3. Flash Flood Road Inundation: Outer Ring Road underpass approach cut off")
     print("="*70)
 
-    # Update state with T+10 events
-    t10_incident = scenario["t10_change_events"][0]["incident"]
-    state["incidents"][t10_incident["id"]] = t10_incident
+    # Ingest and verify T+10 incident
+    t10_incident_raw = scenario["t10_change_events"][0]["incident"]
+    t10_rec = IncidentRecord(**t10_incident_raw)
+    t10_verified = orchestrator.verification.process_incident(t10_rec)
+    state["incidents"][t10_rec.id] = t10_verified.model_dump()
 
+    score = t10_verified.credibility_score
+    lbl = t10_verified.verification_label.value
+    print("\n" + "="*70)
+    print("            T+10 CRITICAL INCIDENT VERIFICATION BREAKDOWN")
+    print("="*70)
+    print(f"Incident:    {t10_rec.id} ({t10_rec.title})")
+    print(f"Severity:    SEV {t10_rec.severity} (Life-Threatening: {t10_rec.is_life_threatening})")
+    print(f"Sources:     {t10_rec.report_ids} (Citizen report from citizen_sanjay, prior weight 0.55)")
+    print("Sensors:     No flood water-level sensor active within 1000m radius")
+    print(f"Score:       {score:.4f} | Label: {lbl.upper()}")
+    print("Operational: PROVISIONAL dispatch assigned immediately due to severity 5 danger;")
+    print("             Unit commander confirmation required on scene to confirm or stand down.")
+    print("="*70)
+
+    # Update unit statuses
     for u in state["units"]:
         if u["id"] == "amb_02":
             u["status"] = "unavailable"
         elif u["id"] in [a.unit_id for a in plan.assignments]:
             u["status"] = "en_route"
             u["current_target_id"] = next(a.incident_id for a in plan.assignments if a.unit_id == u["id"])
+
+    # Physical road block in the environment
+    orchestrator.impact.engine.block_road("bellandur", "orr_underpass", reason="flooded underpass approach", flood_depth=2.5)
+    orchestrator.impact.engine.block_road("bellandur", "hosp_sakra", reason="flooded underpass approach", flood_depth=2.0)
+    orchestrator.impact.engine.block_road("koramangala", "bellandur", reason="flooded sarjapur road", flood_depth=1.5)
+    orchestrator.impact.engine.block_road("hsr_layout", "bellandur", reason="flooded outer ring road", flood_depth=2.0)
 
     # Trigger selective re-plan for unit_status_change
     state["trigger_event_type"] = "unit_status_change"
@@ -121,15 +168,39 @@ def run_scenario(auto_approve: bool = True):
     print("\n[SELECTIVE RE-PLAN COMPLETE]")
     print(f"Active Agents in Re-Plan: {state_t10.get('active_agents')}")
 
+    # Print T+10 Plan
+    t10_plan_data = state_t10.get("current_plan")
+    if t10_plan_data:
+        t10_plan = Plan(**t10_plan_data)
+        print("\n" + "-"*70)
+        print(f"PROPOSED T+10 RE-PLAN (ID: {t10_plan.plan_id[:8]})")
+        print(f"Total Cost: {t10_plan.cost_breakdown.total_cost:.2f} | Delay Harm: {t10_plan.cost_breakdown.delay_harm_cost:.2f} | Wasted Cost: {t10_plan.cost_breakdown.wasted_dispatch_cost:.2f}")
+        for a in t10_plan.assignments:
+            prov = " [PROVISIONAL]" if a.is_provisional else " [CONFIRMED]"
+            print(f"  * {a.unit_id} -> {a.incident_id} (ETA: {a.eta_minutes}m){prov}")
+        print("-"*70)
+
     diff_data = state_t10.get("plan_diff")
     if diff_data:
         diff = PlanDiff(**diff_data)
-        print("\n" + "-"*60)
+        print("\n" + "-"*70)
         print(f"PLAN REVISION DIFF: {diff.summary}")
+        print(f"Plan Cost Delta: {diff.total_cost_delta:.2f} | Units Redirected: {diff.units_redirected}")
         for c in diff.changes:
-            dec = " [REQUIRES HUMAN CONFIRMATION]" if c.requires_human_decision else ""
-            print(f"  * Unit {c.unit_id}: {c.from_incident_id} -> {c.to_incident_id} ({c.reason}){dec}")
-        print("-"*60)
+            dec = " [REQUIRES HUMAN DECISION]" if c.requires_human_decision else ""
+            eta_info = f"(ETA: {c.eta_before}m -> {c.eta_after}m)" if (c.eta_before is not None and c.eta_after is not None) else ""
+            print(f"  * Unit {c.unit_id}: {c.from_incident_id or 'none'} -> {c.to_incident_id or 'none'} | {c.change_kind.value} | {c.reason} {eta_info}{dec}")
+        print("-"*70)
+
+    neg_hist = state_t10.get("negotiation_history", [])
+    if neg_hist:
+        print("\n" + "="*70)
+        print("               INTER-AGENT NEGOTIATION ROUNDS")
+        print("="*70)
+        for h in neg_hist:
+            print(f"Round {h.get('round')}: Veto by ImpactAgent: {h.get('veto_reason')}")
+            print(f"         Added constraints: {h.get('added_constraints')}")
+        print("="*70)
 
     # 6. Print Full Inter-Agent Audit Trace
     print("\n" + "="*70)

@@ -12,6 +12,8 @@ import {
   StateSnapshot,
   Role,
   WSEvent,
+  AttackResponse,
+  USPProofResponse,
 } from "@/types";
 
 export type ConnectionStatus = "CONNECTED" | "CONNECTING" | "DISCONNECTED" | "ERROR";
@@ -50,13 +52,24 @@ interface CrisisState {
   activeRole: Role;
   userId: string;
 
-  // System & Connection
   connectionStatus: ConnectionStatus;
+  scenarioClock: string;
   lastEventId: string | null;
   isOfflineMap: boolean;
   selectedIncidentId: string | null;
   selectedUnitId: string | null;
   pendingApproval: PendingApproval | null;
+
+  // Phase 7 Demo & Presenter State
+  isPresenterMode: boolean;
+  isSafeMode: boolean;
+  isAttackPanelOpen: boolean;
+  isUSPPanelOpen: boolean;
+  playbackSpeed: number;
+  isPlaying: boolean;
+  lastAttackOutcome: AttackResponse | null;
+  highlightedTraceId: string | null;
+  uspProofData: USPProofResponse | null;
 
   // Actions
   setSnapshot: (snapshot: StateSnapshot) => void;
@@ -69,6 +82,21 @@ interface CrisisState {
   toggleOfflineMap: () => void;
   clearPendingApproval: () => void;
   setAuditStatus: (status: { is_valid: boolean; total_entries: number; status: string }) => void;
+
+  // Phase 7 Actions
+  togglePresenterMode: () => void;
+  setPresenterMode: (val: boolean) => void;
+  toggleSafeMode: () => void;
+  setSafeMode: (val: boolean) => void;
+  toggleAttackPanel: () => void;
+  setAttackPanelOpen: (val: boolean) => void;
+  toggleUSPPanel: () => void;
+  setUSPPanelOpen: (val: boolean) => void;
+  setPlaybackSpeed: (speed: number) => void;
+  setIsPlaying: (val: boolean) => void;
+  setLastAttackOutcome: (outcome: AttackResponse | null) => void;
+  setHighlightedTraceId: (id: string | null) => void;
+  setUSPProofData: (data: USPProofResponse | null) => void;
 }
 
 export const useCrisisStore = create<CrisisState>((set) => ({
@@ -94,24 +122,75 @@ export const useCrisisStore = create<CrisisState>((set) => ({
   userId: "commander",
 
   connectionStatus: "DISCONNECTED",
+  scenarioClock: "T+00:00",
   lastEventId: null,
-  isOfflineMap: false,
+  isOfflineMap: true,
   selectedIncidentId: null,
   selectedUnitId: null,
   pendingApproval: null,
 
+  // Phase 7 Initial State
+  isPresenterMode: true, // Default to true for rich presenter capabilities
+  isSafeMode: true,      // Default to true for safe local demo execution
+  isAttackPanelOpen: false,
+  isUSPPanelOpen: false,
+  playbackSpeed: 1.0,
+  isPlaying: false,
+  lastAttackOutcome: null,
+  highlightedTraceId: null,
+  uspProofData: null,
+
   setSnapshot: (snapshot: StateSnapshot) =>
-    set({
-      incidents: snapshot.incidents || {},
-      units: snapshot.units || [],
-      hospitals: snapshot.hospitals || [],
-      currentPlan: snapshot.current_plan || null,
-      previousApprovedPlan: snapshot.previous_approved_plan || null,
-      planDiff: snapshot.plan_diff || null,
-      impactReport: snapshot.impact_report || null,
-      commanderBriefing: snapshot.commander_briefing || null,
-      status: snapshot.status || "INITIALIZED",
-      agentTrace: snapshot.message_log || [],
+    set((state) => {
+      // Restore pending approval if state indicates waiting or approvals exist
+      let pendingApproval: PendingApproval | null = null;
+      if (snapshot.pending_approvals && snapshot.pending_approvals.length > 0) {
+        const p = snapshot.pending_approvals[0];
+        pendingApproval = {
+          plan_id: p.plan_id,
+          plan_hash: p.plan_hash,
+          briefing: snapshot.commander_briefing || null,
+        };
+      } else if (snapshot.status === "AWAITING_COMMANDER_APPROVAL" && snapshot.current_plan) {
+        pendingApproval = {
+          plan_id: snapshot.current_plan.plan_id,
+          plan_hash: (snapshot.current_plan as any).plan_hash || "",
+          briefing: snapshot.commander_briefing || null,
+        };
+      }
+
+      // Format agent trace from message_log
+      const agentTrace: AgentMessage[] = (snapshot.message_log || []).map((m: any) => ({
+        sender: m.sender || "Agent",
+        receiver: m.receiver || "Broadcast",
+        type: m.type || "Update",
+        payload: m.payload || {},
+        trace_id: m.trace_id || "",
+        timestamp: m.timestamp || Date.now() / 1000,
+      })).slice(-150).reverse();
+
+      // Hydrate scenario clock
+      let scenarioClock = state.scenarioClock;
+      if (snapshot.incidents && snapshot.incidents["inc_t10_critical_underpass"]) {
+        scenarioClock = "T+10:00";
+      } else if (snapshot.status === "RUNNING_T0" || snapshot.status === "AWAITING_COMMANDER_APPROVAL" || snapshot.status === "INITIALIZED") {
+        scenarioClock = "T+00:00";
+      }
+
+      return {
+        incidents: snapshot.incidents || {},
+        units: snapshot.units || [],
+        hospitals: snapshot.hospitals || [],
+        currentPlan: snapshot.current_plan || null,
+        previousApprovedPlan: snapshot.previous_approved_plan || null,
+        planDiff: snapshot.plan_diff || null,
+        impactReport: snapshot.impact_report || null,
+        commanderBriefing: snapshot.commander_briefing || null,
+        status: snapshot.status || "INITIALIZED",
+        pendingApproval,
+        agentTrace: agentTrace.length > 0 ? agentTrace : state.agentTrace,
+        scenarioClock,
+      };
     }),
 
   handleWsEvent: (event: WSEvent) => {
@@ -203,6 +282,11 @@ export const useCrisisStore = create<CrisisState>((set) => ({
           if (payload.status) {
             updates.status = payload.status;
           }
+          if (payload.action === "reset" || payload.action === "start") {
+            updates.scenarioClock = "T+00:00";
+          } else if (payload.action === "step") {
+            updates.scenarioClock = "T+10:00";
+          }
           break;
         }
 
@@ -222,4 +306,19 @@ export const useCrisisStore = create<CrisisState>((set) => ({
   toggleOfflineMap: () => set((state) => ({ isOfflineMap: !state.isOfflineMap })),
   clearPendingApproval: () => set({ pendingApproval: null }),
   setAuditStatus: (auditStatus) => set({ auditStatus }),
+
+  // Phase 7 Actions
+  togglePresenterMode: () => set((state) => ({ isPresenterMode: !state.isPresenterMode })),
+  setPresenterMode: (isPresenterMode: boolean) => set({ isPresenterMode }),
+  toggleSafeMode: () => set((state) => ({ isSafeMode: !state.isSafeMode, isOfflineMap: !state.isSafeMode })),
+  setSafeMode: (isSafeMode: boolean) => set({ isSafeMode, isOfflineMap: isSafeMode }),
+  toggleAttackPanel: () => set((state) => ({ isAttackPanelOpen: !state.isAttackPanelOpen })),
+  setAttackPanelOpen: (isAttackPanelOpen: boolean) => set({ isAttackPanelOpen }),
+  toggleUSPPanel: () => set((state) => ({ isUSPPanelOpen: !state.isUSPPanelOpen })),
+  setUSPPanelOpen: (isUSPPanelOpen: boolean) => set({ isUSPPanelOpen }),
+  setPlaybackSpeed: (playbackSpeed: number) => set({ playbackSpeed }),
+  setIsPlaying: (isPlaying: boolean) => set({ isPlaying }),
+  setLastAttackOutcome: (lastAttackOutcome: AttackResponse | null) => set({ lastAttackOutcome }),
+  setHighlightedTraceId: (highlightedTraceId: string | null) => set({ highlightedTraceId }),
+  setUSPProofData: (uspProofData: USPProofResponse | null) => set({ uspProofData }),
 }));

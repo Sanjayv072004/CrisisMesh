@@ -5,6 +5,7 @@ from backend.app.api.schemas import PlanApproveRequest, PlanRejectRequest
 from backend.app.api.auth import require_permission, get_current_user
 from backend.app.security.rbac import Permission, UserToken, CommanderToken
 from backend.app.api.state_manager import state_manager
+from backend.app.models.schemas import Plan, PlanDiff
 from backend.app.orchestration.state import StateSnapshot
 
 router = APIRouter(tags=["State & Plans"])
@@ -16,7 +17,7 @@ def get_disaster_state(user: UserToken = Depends(require_permission(Permission.V
     return state_manager.get_snapshot()
 
 
-@router.get("/plan/current")
+@router.get("/plan/current", response_model=Plan)
 def get_current_plan(user: UserToken = Depends(require_permission(Permission.VIEW))):
     """Retrieve current proposed or active resource allocation plan."""
     curr_plan = state_manager.state.get("current_plan")
@@ -25,12 +26,12 @@ def get_current_plan(user: UserToken = Depends(require_permission(Permission.VIE
     return curr_plan
 
 
-@router.get("/plan/diff")
+@router.get("/plan/diff", response_model=PlanDiff)
 def get_plan_diff(user: UserToken = Depends(require_permission(Permission.VIEW))):
     """Retrieve delta between previously approved plan and current revision."""
     diff = state_manager.state.get("plan_diff")
     if not diff:
-        return {"summary": "No plan revisions generated yet", "changes": []}
+        return PlanDiff(new_plan_id="none", summary="No plan revisions generated yet", changes=[])
     return diff
 
 
@@ -90,7 +91,7 @@ def reject_plan(
     if not isinstance(user, CommanderToken):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Only certified commanders can reject allocation proposals.",
+            detail="Only certified commanders can reject allocation proposals.",
         )
 
     result = state_manager.reject_plan(

@@ -17,6 +17,7 @@ from backend.app.api.routes_audit import router as audit_router
 from backend.app.api.routes_scenario import router as scenario_router
 from backend.app.api.routes_attacks import router as attacks_router
 from backend.app.api.routes_ws import router as ws_router
+from backend.app.api.routes_analysis import router as analysis_router
 from backend.app.security.secrets import secrets_config
 
 START_TIME = time.time()
@@ -160,6 +161,24 @@ def create_app() -> FastAPI:
     app.include_router(scenario_router)
     app.include_router(attacks_router)
     app.include_router(ws_router)
+    app.include_router(analysis_router)
+
+    # 6. Startup Security Warning Banner
+    @app.on_event("startup")
+    async def startup_event():
+        from backend.app.api.auth import is_demo_mode
+        if is_demo_mode():
+            banner = [
+                "!" * 78,
+                "! [SECURITY ALERT] CRISISMESH_DEMO_MODE IS EXPLICITLY ENABLED                 !",
+                "! Demo authentication bypass and /auth/demo-login endpoints are ACTIVE.     !",
+                "! Hardcoded demo roles (viewer, operator, commander) are AVAILABLE.         !",
+                "! DO NOT DEPLOY IN PRODUCTION WITH CRISISMESH_DEMO_MODE=true                !",
+                "!" * 78,
+            ]
+            print("\n" + "\n".join(banner) + "\n", flush=True)
+        else:
+            print("[CrisisMesh Security] Production mode: CRISISMESH_DEMO_MODE is FALSE. Demo accounts are disabled.", flush=True)
 
     return app
 

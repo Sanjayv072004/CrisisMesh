@@ -40,7 +40,7 @@ class HMACAuthenticator:
 
     def verify(self, source_id: str, data_bytes: bytes, signature_hex: Optional[str]) -> Tuple[bool, str]:
         """Verify HMAC signature for a registered source.
-        
+
         Returns:
             (is_valid, reason)
         """
