@@ -14,10 +14,14 @@ if (-not (Test-Path $LOGS_DIR)) {
     New-Item -ItemType Directory -Path $LOGS_DIR -Force | Out-Null
 }
 
-$BACKEND_TUNNEL_LOG = Join-Path $LOGS_DIR "cloudflared_backend.log"
-$FRONTEND_TUNNEL_LOG = Join-Path $LOGS_DIR "cloudflared_frontend.log"
-$BACKEND_SERVER_LOG = Join-Path $LOGS_DIR "backend_server.log"
-$FRONTEND_SERVER_LOG = Join-Path $LOGS_DIR "frontend_server.log"
+$BACKEND_TUNNEL_OUT = Join-Path $LOGS_DIR "cloudflared_backend.out.log"
+$BACKEND_TUNNEL_ERR = Join-Path $LOGS_DIR "cloudflared_backend.err.log"
+$FRONTEND_TUNNEL_OUT = Join-Path $LOGS_DIR "cloudflared_frontend.out.log"
+$FRONTEND_TUNNEL_ERR = Join-Path $LOGS_DIR "cloudflared_frontend.err.log"
+$BACKEND_SERVER_OUT = Join-Path $LOGS_DIR "backend_server.out.log"
+$BACKEND_SERVER_ERR = Join-Path $LOGS_DIR "backend_server.err.log"
+$FRONTEND_SERVER_OUT = Join-Path $LOGS_DIR "frontend_server.out.log"
+$FRONTEND_SERVER_ERR = Join-Path $LOGS_DIR "frontend_server.err.log"
 
 Write-Host "=========================================================" -ForegroundColor Cyan
 Write-Host " CrisisMesh: Starting Cloudflare Quick Tunnels Share Flow " -ForegroundColor Cyan
@@ -44,25 +48,28 @@ Write-Host "[2/6] Starting FastAPI Backend on 0.0.0.0:8000..." -ForegroundColor 
 $env:CRISISMESH_DEMO_MODE = "true"
 $env:LLM_MODE = "mock"
 
-$backendProc = Start-Process python -ArgumentList "-m", "uvicorn", "backend.app.api.main:app", "--host", "0.0.0.0", "--port", "8000" -WorkingDirectory $ROOT_DIR -PassThru -RedirectStandardOutput $BACKEND_SERVER_LOG -RedirectStandardError $BACKEND_SERVER_LOG
+$backendProc = Start-Process python -ArgumentList "-m", "uvicorn", "backend.app.api.main:app", "--host", "0.0.0.0", "--port", "8000" -WorkingDirectory $ROOT_DIR -PassThru -RedirectStandardOutput $BACKEND_SERVER_OUT -RedirectStandardError $BACKEND_SERVER_ERR
 
 Start-Sleep -Seconds 3
 
 # Step B: Start Quick Tunnel to http://localhost:8000
 Write-Host "[3/6] Starting Cloudflare Quick Tunnel for Backend (Port 8000)..." -ForegroundColor Yellow
-if (Test-Path $BACKEND_TUNNEL_LOG) { Remove-Item $BACKEND_TUNNEL_LOG -Force }
+if (Test-Path $BACKEND_TUNNEL_OUT) { Remove-Item $BACKEND_TUNNEL_OUT -Force }
+if (Test-Path $BACKEND_TUNNEL_ERR) { Remove-Item $BACKEND_TUNNEL_ERR -Force }
 
-$backendTunnelProc = Start-Process cloudflared -ArgumentList "tunnel", "--url", "http://127.0.0.1:8000" -PassThru -RedirectStandardOutput $BACKEND_TUNNEL_LOG -RedirectStandardError $BACKEND_TUNNEL_LOG
+$backendTunnelProc = Start-Process cloudflared -ArgumentList "tunnel", "--url", "http://127.0.0.1:8000" -PassThru -RedirectStandardOutput $BACKEND_TUNNEL_OUT -RedirectStandardError $BACKEND_TUNNEL_ERR
 
 $backendUrl = ""
 for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Seconds 1
-    if (Test-Path $BACKEND_TUNNEL_LOG) {
-        $content = Get-Content $BACKEND_TUNNEL_LOG -Raw -ErrorAction SilentlyContinue
-        if ($content -match "https://[a-zA-Z0-9-]+\.trycloudflare\.com") {
-            $backendUrl = $matches[0]
-            break
-        }
+    $outText = ""
+    $errText = ""
+    if (Test-Path $BACKEND_TUNNEL_OUT) { $outText = Get-Content $BACKEND_TUNNEL_OUT -Raw -ErrorAction SilentlyContinue }
+    if (Test-Path $BACKEND_TUNNEL_ERR) { $errText = Get-Content $BACKEND_TUNNEL_ERR -Raw -ErrorAction SilentlyContinue }
+    $combined = "$outText`n$errText"
+    if ($combined -match "https://[a-zA-Z0-9-]+\.trycloudflare\.com") {
+        $backendUrl = $matches[0]
+        break
     }
 }
 
@@ -88,25 +95,28 @@ npm.cmd run build
 Pop-Location
 
 Write-Host "Starting Next.js production server on port 3000..." -ForegroundColor Yellow
-$frontendProc = Start-Process npm.cmd -ArgumentList "run", "start" -WorkingDirectory $FRONTEND_DIR -PassThru -RedirectStandardOutput $FRONTEND_SERVER_LOG -RedirectStandardError $FRONTEND_SERVER_LOG
+$frontendProc = Start-Process npm.cmd -ArgumentList "run", "start" -WorkingDirectory $FRONTEND_DIR -PassThru -RedirectStandardOutput $FRONTEND_SERVER_OUT -RedirectStandardError $FRONTEND_SERVER_ERR
 
 Start-Sleep -Seconds 3
 
 # Step D: Start Quick Tunnel to http://localhost:3000
 Write-Host "[5/6] Starting Cloudflare Quick Tunnel for Frontend (Port 3000)..." -ForegroundColor Yellow
-if (Test-Path $FRONTEND_TUNNEL_LOG) { Remove-Item $FRONTEND_TUNNEL_LOG -Force }
+if (Test-Path $FRONTEND_TUNNEL_OUT) { Remove-Item $FRONTEND_TUNNEL_OUT -Force }
+if (Test-Path $FRONTEND_TUNNEL_ERR) { Remove-Item $FRONTEND_TUNNEL_ERR -Force }
 
-$frontendTunnelProc = Start-Process cloudflared -ArgumentList "tunnel", "--url", "http://127.0.0.1:3000" -PassThru -RedirectStandardOutput $FRONTEND_TUNNEL_LOG -RedirectStandardError $FRONTEND_TUNNEL_LOG
+$frontendTunnelProc = Start-Process cloudflared -ArgumentList "tunnel", "--url", "http://127.0.0.1:3000" -PassThru -RedirectStandardOutput $FRONTEND_TUNNEL_OUT -RedirectStandardError $FRONTEND_TUNNEL_ERR
 
 $frontendUrl = ""
 for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Seconds 1
-    if (Test-Path $FRONTEND_TUNNEL_LOG) {
-        $content = Get-Content $FRONTEND_TUNNEL_LOG -Raw -ErrorAction SilentlyContinue
-        if ($content -match "https://[a-zA-Z0-9-]+\.trycloudflare\.com") {
-            $frontendUrl = $matches[0]
-            break
-        }
+    $outText = ""
+    $errText = ""
+    if (Test-Path $FRONTEND_TUNNEL_OUT) { $outText = Get-Content $FRONTEND_TUNNEL_OUT -Raw -ErrorAction SilentlyContinue }
+    if (Test-Path $FRONTEND_TUNNEL_ERR) { $errText = Get-Content $FRONTEND_TUNNEL_ERR -Raw -ErrorAction SilentlyContinue }
+    $combined = "$outText`n$errText"
+    if ($combined -match "https://[a-zA-Z0-9-]+\.trycloudflare\.com") {
+        $frontendUrl = $matches[0]
+        break
     }
 }
 
@@ -175,3 +185,16 @@ $results = @{
 } | ConvertTo-Json
 
 Set-Content -Path (Join-Path $ROOT_DIR "public_share_info.json") -Value $results -Force
+
+Write-Host "Keeping all services and Cloudflare quick tunnels active..." -ForegroundColor Cyan
+try {
+    while ($true) {
+        Start-Sleep -Seconds 10
+    }
+} finally {
+    Write-Host "Shutting down background services..." -ForegroundColor Yellow
+    Stop-Process -Id $backendProc.Id -Force -ErrorAction SilentlyContinue
+    Stop-Process -Id $frontendProc.Id -Force -ErrorAction SilentlyContinue
+    Stop-Process -Id $backendTunnelProc.Id -Force -ErrorAction SilentlyContinue
+    Stop-Process -Id $frontendTunnelProc.Id -Force -ErrorAction SilentlyContinue
+}
