@@ -127,5 +127,6 @@ def get_map_graph():
         "edges": edges,
         "total_nodes": len(nodes),
         "total_edges": len(edges),
-        "blocked_count": sum(1 for e in edges if e["is_blocked"])
+        "blocked_count": sum(1 for e in edges if e["is_blocked"]),
+        "graph_source": "Cached OpenStreetMap Subgraph (South-East Bengaluru)",
     }

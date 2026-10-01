@@ -40,7 +40,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
-        # Allow Swagger UI and ReDoc CDNs on documentation routes; strict 'self' for all API routes
+        # Allow Swagger UI and ReDoc CDNs on documentation routes; allow Cloudflare tunnels & self for all API routes
         if request.url.path in ("/docs", "/redoc", "/openapi.json"):
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
@@ -50,7 +50,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "connect-src 'self'"
             )
         else:
-            response.headers["Content-Security-Policy"] = "default-src 'self'"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self' https://*.trycloudflare.com; "
+                "connect-src 'self' https://*.trycloudflare.com wss://*.trycloudflare.com ws://localhost:* http://localhost:* ws://127.0.0.1:* http://127.0.0.1:*; "
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: blob:;"
+            )
         return response
 
 
@@ -90,11 +96,18 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
-    # 1. CORS Middleware (Restricted to frontend origin)
+    # 1. CORS Middleware (Restricted to frontend origin + Cloudflare quick tunnels)
     allowed_origins = [FRONTEND_ORIGIN, "http://localhost:3000", "http://127.0.0.1:3000"]
+    extra_origins = os.getenv("CRISISMESH_ALLOWED_ORIGINS", "")
+    if extra_origins:
+        for o in extra_origins.split(","):
+            if o.strip() and o.strip() not in allowed_origins:
+                allowed_origins.append(o.strip())
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
+        allow_origin_regex=r"https://.*\.trycloudflare\.com|https://.*\.loca\.lt|http://localhost:\d+|http://127\.0\.0\.1:\d+",
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],

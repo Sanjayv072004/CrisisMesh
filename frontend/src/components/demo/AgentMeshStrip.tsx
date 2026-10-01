@@ -35,20 +35,20 @@ const AGENTS: AgentDef[] = [
 ];
 
 export function AgentMeshStrip() {
-  const { agentTrace, status, currentPlan, planDiff } = useCrisisStore();
+  const { agentTrace, status, currentPlan, planDiff, vetoCount } = useCrisisStore();
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   // Determine active agent from latest message trace
   const latestMsg = agentTrace[0];
   const activeAgentName = latestMsg?.sender || (status === "RUNNING_T0" ? "Resource" : "Command");
 
-  // Detect unscripted VETO in trace
-  const hasVeto = agentTrace.some(
+  // Detect unscripted VETO in trace or plan metadata strictly
+  const hasVeto = Boolean(vetoCount > 0) || agentTrace.some(
     (m) =>
       m.type === "RouteVetoed" ||
       m.type === "PlanVetoed" ||
-      (m.sender === "Guardian" && m.receiver === "Resource") ||
-      (m.payload && JSON.stringify(m.payload).includes("veto"))
+      m.type === "PlanVeto" ||
+      (m.payload && typeof m.payload === "object" && Boolean(m.payload.veto))
   );
 
   return (

@@ -39,14 +39,13 @@ class ResourceAgent(BaseAgent):
     ) -> Plan:
         """Formulate allocation plan using CP-SAT solver."""
         if self.cached_matrix is None:
-            matrix = self.impact.travel_time_matrix(units, incidents)
-            self.cached_matrix = dict(matrix)
-        else:
-            matrix = dict(self.cached_matrix)
-            for u in units:
-                for inc in incidents:
-                    if (u.id, inc.id) not in matrix:
-                        matrix[(u.id, inc.id)] = round(self.impact.compute_travel_time(u.lat, u.lon, inc.lat, inc.lon)[0], 1)
+            self.cached_matrix = dict(self.impact.travel_time_matrix(units, incidents))
+
+        matrix = dict(self.cached_matrix)
+        for u in units:
+            for inc in incidents:
+                if (u.id, inc.id) not in matrix:
+                    matrix[(u.id, inc.id)] = round(self.impact.compute_travel_time(u.lat, u.lon, inc.lat, inc.lon)[0], 1)
 
         plan: Plan = self.call_tool(
             "solve_plan",

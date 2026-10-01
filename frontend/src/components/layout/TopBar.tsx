@@ -3,30 +3,37 @@
 import React, { useEffect, useState } from "react";
 import { useCrisisStore } from "@/store/useCrisisStore";
 import { api } from "@/lib/api";
-import { wsClient } from "@/lib/websocket";
-import { Role } from "@/types";
 import {
-  ShieldAlert,
-  ShieldCheck,
   Radio,
   Clock,
   RotateCcw,
-  Play,
-  FastForward,
-  UserCheck,
-  Server,
+  ShieldAlert,
+  BarChart3,
+  Sliders,
+  Sparkles,
+  ArrowRight,
+  ShieldCheck,
+  Zap,
 } from "lucide-react";
 
-export function TopBar() {
+interface TopBarProps {
+  onNextStep?: () => void;
+}
+
+export function TopBar({ onNextStep }: TopBarProps) {
   const {
     status,
     scenarioClock,
-    activeRole,
-    setActiveRole,
     connectionStatus,
     auditStatus,
     setSnapshot,
     setAuditStatus,
+    toggleAttackPanel,
+    toggleUSPPanel,
+    isUnderTheHood,
+    toggleUnderTheHood,
+    currentPlan,
+    incidents,
   } = useCrisisStore();
 
   const [timeStr, setTimeStr] = useState<string>("");
@@ -42,18 +49,6 @@ export function TopBar() {
     return () => clearInterval(interval);
   }, []);
 
-  // Role switch handler using backend demo login endpoint
-  const handleRoleChange = async (newRole: Role) => {
-    try {
-      const res = await api.demoLogin(newRole);
-      setActiveRole(newRole);
-      wsClient.connect(res.access_token);
-    } catch (e) {
-      console.error("Failed to switch role:", e);
-    }
-  };
-
-  // Scenario actions
   const handleReset = async () => {
     setIsActing(true);
     try {
@@ -68,23 +63,24 @@ export function TopBar() {
     }
   };
 
-  const handleStart = async () => {
-    setIsActing(true);
-    try {
-      const snap = await api.startScenario();
-      setSnapshot(snap);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsActing(false);
+  const handleNextAction = async () => {
+    if (onNextStep) {
+      onNextStep();
+      return;
     }
-  };
-
-  const handleStep = async () => {
     setIsActing(true);
     try {
-      const snap = await api.stepScenario();
-      setSnapshot(snap);
+      if (Object.keys(incidents).length === 0) {
+        const snap = await api.startScenario();
+        setSnapshot(snap);
+      } else if (status === "AWAITING_COMMANDER_APPROVAL" && currentPlan) {
+        await api.approvePlan(currentPlan.plan_id, { auto_sign: true });
+        const snap = await api.getStateSnapshot();
+        setSnapshot(snap);
+      } else if (status === "DISPATCHED" && !incidents["inc_t10_critical_underpass"]) {
+        const snap = await api.stepScenario();
+        setSnapshot(snap);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -93,147 +89,118 @@ export function TopBar() {
   };
 
   return (
-    <header className="h-14 bg-ops-surface border-b border-ops-border flex items-center justify-between px-4 select-none">
-      {/* Brand & Status */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded bg-red-950/80 border border-ops-red flex items-center justify-center text-ops-red shadow-[0_0_12px_rgba(239,68,68,0.4)]">
-            <Radio className="w-5 h-5 animate-pulse" />
+    <header className="h-14 bg-[#080a18] border-b border-slate-800/80 flex items-center justify-between px-4 select-none z-30 font-sans">
+      {/* 1. Left: Brand & Demo Mode Badge */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-red-950/80 border border-red-700/60 flex items-center justify-center text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.3)]">
+            <Radio className="w-4 h-4 animate-pulse" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-sm tracking-wider uppercase text-ops-text font-mono shrink-0">
+              <span className="font-bold text-sm tracking-wider uppercase text-white font-mono">
                 CRISISMESH
               </span>
-              <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-blue-950/80 text-ops-cyan border border-blue-800 shrink-0 whitespace-nowrap leading-none font-bold">
-                OPS CENTRE
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-semibold">
+                Demo mode: offline AI
               </span>
             </div>
-            <div className="text-[10px] text-ops-muted font-mono">Bengaluru Flood Command</div>
+            <div className="text-[10px] text-slate-400">Bengaluru Flood Command</div>
           </div>
         </div>
 
-        {/* Vertical divider */}
-        <div className="h-6 w-px bg-ops-border" />
-
-        {/* Operational State Badge */}
-        <div className="flex items-center gap-2 font-mono text-xs">
-          <span className="text-ops-muted text-[11px]">STATE:</span>
+        {/* Small Status Pill */}
+        <div className="hidden lg:flex items-center gap-1.5 ml-2 font-mono text-xs">
           <span
-            className={`px-2 py-0.5 rounded border text-[11px] font-semibold tracking-wide ${
+            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide border ${
               status === "DISPATCHED"
-                ? "bg-emerald-950/80 text-ops-emerald border-emerald-700"
+                ? "bg-emerald-950/80 text-emerald-300 border-emerald-700/60"
                 : status === "AWAITING_COMMANDER_APPROVAL"
-                ? "bg-amber-950/80 text-ops-amber border-amber-600 animate-pulse"
-                : "bg-slate-900 text-slate-300 border-slate-700"
+                ? "bg-amber-950/80 text-amber-300 border-amber-600/60 animate-pulse"
+                : "bg-slate-900 text-slate-400 border-slate-800"
             }`}
           >
-            {status}
+            {status === "AWAITING_COMMANDER_APPROVAL" ? "Awaiting Approval" : status}
           </span>
         </div>
       </div>
 
-      {/* Scenario Controls */}
-      <div className="flex items-center gap-1.5 bg-ops-bg border border-ops-border p-1 rounded-md">
+      {/* 2. Center: Quick Exploration Action Buttons */}
+      <div className="flex items-center gap-2">
+        {/* Button: Try to attack it */}
         <button
-          onClick={handleReset}
-          disabled={isActing}
-          title="Reset to clean baseline scenario"
-          className="flex items-center gap-1 px-2 py-1 text-xs font-mono rounded text-slate-300 hover:text-white hover:bg-ops-surfaceHover disabled:opacity-50 transition-colors"
+          onClick={toggleAttackPanel}
+          className="px-3 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-300 border border-red-800/50 text-xs font-medium font-mono flex items-center gap-1.5 transition-all shadow-sm"
+          title="Simulate prompt injections, fake reports, and botnet attacks"
         >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span>Reset</span>
+          <ShieldAlert className="w-3.5 h-3.5 text-red-400" />
+          <span>Try to attack it</span>
         </button>
+
+        {/* Button: Why it's smarter */}
         <button
-          onClick={handleStart}
-          disabled={isActing}
-          title="Inject T0 Incidents (Silk Board, Bellandur, Koramangala)"
-          className="flex items-center gap-1 px-2.5 py-1 text-xs font-mono rounded bg-blue-950 text-ops-cyan border border-blue-800 hover:bg-blue-900 disabled:opacity-50 transition-colors font-medium"
+          onClick={toggleUSPPanel}
+          className="px-3 py-1.5 rounded-lg bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-800/50 text-xs font-medium font-mono flex items-center gap-1.5 transition-all shadow-sm"
+          title="View live mathematical CP-SAT proof comparing Low-Churn vs Naive re-planning"
         >
-          <Play className="w-3.5 h-3.5 fill-current" />
-          <span>Start T0</span>
+          <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Why it&apos;s smarter</span>
         </button>
+
+        {/* Toggle: Under the hood */}
         <button
-          onClick={handleStep}
-          disabled={isActing}
-          title="Inject T+10 events (Outer Ring Road underpass trapped SUV + Amb 2 engine failure)"
-          className="flex items-center gap-1 px-2.5 py-1 text-xs font-mono rounded bg-amber-950 text-ops-amber border border-amber-800 hover:bg-amber-900 disabled:opacity-50 transition-colors font-medium"
+          onClick={toggleUnderTheHood}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium font-mono flex items-center gap-1.5 transition-all border ${
+            isUnderTheHood
+              ? "bg-violet-950/80 text-violet-300 border-violet-700/80 shadow-[0_0_12px_rgba(139,92,246,0.3)]"
+              : "bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800"
+          }`}
+          title="Toggle technical agent trace, solver costs, and security feeds"
         >
-          <FastForward className="w-3.5 h-3.5 fill-current" />
-          <span>Step T+10</span>
+          <Sliders className="w-3.5 h-3.5 text-violet-400" />
+          <span>Under the hood</span>
+          <span
+            className={`w-2 h-2 rounded-full ${
+              isUnderTheHood ? "bg-violet-400 animate-pulse" : "bg-slate-600"
+            }`}
+          />
         </button>
       </div>
 
-      {/* Telemetry, Security & Role */}
-      <div className="flex items-center gap-3">
-        {/* Clock Group: Wall Clock (IST) & Scenario Clock (SIM) */}
-        <div className="flex items-center gap-2 px-2.5 py-1 rounded bg-ops-bg border border-ops-border font-mono text-xs shadow-inner">
-          <div className="flex items-center gap-1.5 text-slate-300" title="Local Wall Clock (IST)">
-            <Clock className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-[11px] font-semibold tracking-wide">{timeStr || "00:00:00"} IST</span>
-          </div>
-          <div className="h-3 w-px bg-ops-border" />
-          <div className="flex items-center gap-1.5 text-ops-cyan font-bold" title="Scenario Simulation Clock (from scenario_status)">
-            <span className="text-[10px] text-ops-muted uppercase tracking-wider font-medium">SIM:</span>
-            <span className="tracking-wider">{scenarioClock}</span>
-          </div>
+      {/* 3. Right: Clock, Telemetry & Next Step CTA */}
+      <div className="flex items-center gap-3 font-mono text-xs">
+        {/* Time & Connectivity */}
+        <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[#0b0d1e] border border-slate-800 text-[11px] text-slate-300">
+          <Clock className="w-3 h-3 text-slate-400" />
+          <span>{timeStr || "00:00:00"} IST</span>
+          <span className="text-slate-600">|</span>
+          <span className="text-cyan-400 font-bold">{scenarioClock}</span>
+          <span className="text-slate-600">|</span>
+          <span className="flex items-center gap-1 text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]" />
+            <span>CONNECTED</span>
+          </span>
         </div>
 
-        {/* Audit Status */}
-        <div className="flex items-center gap-1.5 text-xs font-mono">
-          {auditStatus.is_valid ? (
-            <span className="flex items-center gap-1 text-ops-emerald" title="Cryptographic SHA-256 chain valid">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span className="text-[11px]">AUDIT: OK ({auditStatus.total_entries})</span>
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-ops-red font-bold animate-pulse" title="Tampering detected!">
-              <ShieldAlert className="w-3.5 h-3.5" />
-              <span className="text-[11px]">AUDIT: BROKEN</span>
-            </span>
-          )}
-        </div>
+        {/* Small Reset Button */}
+        <button
+          onClick={handleReset}
+          disabled={isActing}
+          title="Reset to initial clean scenario"
+          className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition-colors disabled:opacity-50"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+        </button>
 
-        {/* WebSocket Connection */}
-        <div className="flex items-center gap-1.5 text-xs font-mono">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              connectionStatus === "CONNECTED"
-                ? "bg-ops-emerald shadow-[0_0_8px_#10b981]"
-                : connectionStatus === "CONNECTING"
-                ? "bg-ops-amber animate-ping"
-                : "bg-ops-red"
-            }`}
-          />
-          <span className="text-[11px] text-ops-muted">{connectionStatus}</span>
-        </div>
-
-        {/* Mode Badge */}
-        <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] font-mono text-slate-400">
-          <Server className="w-3 h-3 text-ops-cyan" />
-          <span>MOCK</span>
-        </div>
-
-        {/* Role Selector */}
-        <div className="flex items-center gap-1.5 bg-ops-bg border border-ops-border px-2 py-1 rounded">
-          <UserCheck className="w-3.5 h-3.5 text-ops-amber" />
-          <span className="text-[11px] font-mono text-ops-muted">ROLE:</span>
-          <select
-            value={activeRole}
-            onChange={(e) => handleRoleChange(e.target.value as Role)}
-            className="bg-transparent text-xs font-mono font-semibold uppercase text-ops-amber outline-none cursor-pointer"
-          >
-            <option value="viewer" className="bg-ops-surface text-slate-300">
-              Viewer
-            </option>
-            <option value="operator" className="bg-ops-surface text-ops-cyan">
-              Operator
-            </option>
-            <option value="commander" className="bg-ops-surface text-ops-amber">
-              Commander
-            </option>
-          </select>
-        </div>
+        {/* Primary CTA: Next Step */}
+        <button
+          onClick={handleNextAction}
+          disabled={isActing}
+          className="py-1.5 px-3.5 rounded-lg bg-ops-lime hover:bg-[#b5e228] text-[#0b0c1f] font-bold text-xs font-mono uppercase tracking-wider transition-all duration-150 shadow-[0_0_15px_rgba(198,244,50,0.3)] hover:shadow-[0_0_20px_rgba(198,244,50,0.5)] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+        >
+          <span>Next step</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
       </div>
     </header>
   );

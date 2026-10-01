@@ -156,6 +156,10 @@ class CrisisStateManager:
                         a["incident_id"] for a in curr_plan.get("assignments", []) if a["unit_id"] == u["id"]
                     )
 
+        # Dynamically block flooded Outer Ring Road corridor at submerged underpass location
+        self.orchestrator.impact.engine.block_road("bellandur", "orr_underpass", reason="deep_flood_waterlogging", flood_depth=2.5)
+        self.orchestrator.impact.engine.block_road("marathahalli", "orr_underpass", reason="deep_flood_waterlogging", flood_depth=2.5)
+
         # Trigger selective re-plan
         self.state["trigger_event_type"] = "unit_status_change"
         self.state["active_agents"] = []
@@ -469,8 +473,22 @@ class CrisisStateManager:
         if curr_status != "DISPATCHED" and self.state.get("current_plan"):
             curr_status = "AWAITING_COMMANDER_APPROVAL"
 
+        inc_snapshot = {}
+        for inc_id, inc_obj in self.state.get("incidents", {}).items():
+            if isinstance(inc_obj, dict):
+                inc_copy = dict(inc_obj)
+                if hasattr(inc_copy.get("verification_label"), "value"):
+                    inc_copy["verification_label"] = inc_copy["verification_label"].value
+                if hasattr(inc_copy.get("required_unit_type"), "value"):
+                    inc_copy["required_unit_type"] = inc_copy["required_unit_type"].value
+                inc_snapshot[inc_id] = inc_copy
+            elif hasattr(inc_obj, "model_dump"):
+                inc_snapshot[inc_id] = inc_obj.model_dump(mode="json")
+            else:
+                inc_snapshot[inc_id] = inc_obj
+
         return StateSnapshot(
-            incidents=self.state.get("incidents", {}),
+            incidents=inc_snapshot,
             units=self.state.get("units", []),
             hospitals=self.state.get("hospitals", []),
             verification_labels=self.state.get("verification_labels", {}),

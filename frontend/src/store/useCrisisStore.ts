@@ -59,6 +59,7 @@ interface CrisisState {
   selectedIncidentId: string | null;
   selectedUnitId: string | null;
   pendingApproval: PendingApproval | null;
+  vetoCount: number;
 
   // Phase 7 Demo & Presenter State
   isPresenterMode: boolean;
@@ -70,6 +71,7 @@ interface CrisisState {
   lastAttackOutcome: AttackResponse | null;
   highlightedTraceId: string | null;
   uspProofData: USPProofResponse | null;
+  isUnderTheHood: boolean;
 
   // Actions
   setSnapshot: (snapshot: StateSnapshot) => void;
@@ -97,6 +99,8 @@ interface CrisisState {
   setLastAttackOutcome: (outcome: AttackResponse | null) => void;
   setHighlightedTraceId: (id: string | null) => void;
   setUSPProofData: (data: USPProofResponse | null) => void;
+  toggleUnderTheHood: () => void;
+  setIsUnderTheHood: (val: boolean) => void;
 }
 
 export const useCrisisStore = create<CrisisState>((set) => ({
@@ -128,6 +132,7 @@ export const useCrisisStore = create<CrisisState>((set) => ({
   selectedIncidentId: null,
   selectedUnitId: null,
   pendingApproval: null,
+  vetoCount: 0,
 
   // Phase 7 Initial State
   isPresenterMode: true, // Default to true for rich presenter capabilities
@@ -188,6 +193,7 @@ export const useCrisisStore = create<CrisisState>((set) => ({
         commanderBriefing: snapshot.commander_briefing || null,
         status: snapshot.status || "INITIALIZED",
         pendingApproval,
+        vetoCount: snapshot.veto_count || 0,
         agentTrace: agentTrace.length > 0 ? agentTrace : state.agentTrace,
         scenarioClock,
       };
@@ -321,4 +327,7 @@ export const useCrisisStore = create<CrisisState>((set) => ({
   setLastAttackOutcome: (lastAttackOutcome: AttackResponse | null) => set({ lastAttackOutcome }),
   setHighlightedTraceId: (highlightedTraceId: string | null) => set({ highlightedTraceId }),
   setUSPProofData: (uspProofData: USPProofResponse | null) => set({ uspProofData }),
+  isUnderTheHood: false,
+  toggleUnderTheHood: () => set((state) => ({ isUnderTheHood: !state.isUnderTheHood })),
+  setIsUnderTheHood: (isUnderTheHood: boolean) => set({ isUnderTheHood }),
 }));
